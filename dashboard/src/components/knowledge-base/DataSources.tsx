@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, Link as LinkIcon, Table, AlignLeft, Puzzle, Plus, Loader2, Package } from "lucide-react"
+import { FileText, Link as LinkIcon, Table, AlignLeft, Puzzle, Plus, Loader2, Package, Pencil } from "lucide-react"
 
 type DataSource = {
   id: string
@@ -24,6 +24,7 @@ type DataSource = {
   source_path: string
   status: string
   created_at: string
+  metadata?: any
 }
 
 export function DataSources() {
@@ -32,6 +33,7 @@ export function DataSources() {
   
   const [dialogOpen, setDialogOpen] = useState(false)
   const [sourceType, setSourceType] = useState<string | null>(null)
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null)
   
   // Form states
   const [urlInput, setUrlInput] = useState("")
@@ -46,6 +48,8 @@ export function DataSources() {
   const [productPrice, setProductPrice] = useState("")
   const [productLink, setProductLink] = useState("")
   const [productImage, setProductImage] = useState("")
+  const [productSize, setProductSize] = useState("")
+  const [productColor, setProductColor] = useState("")
   const [productError, setProductError] = useState("")
 
   useEffect(() => {
@@ -54,16 +58,47 @@ export function DataSources() {
 
   async function fetchSources() {
     setLoading(true)
-    const { data, error } = await supabase
+    const { data: sourcesData } = await supabase
       .from('knowledge_sources')
       .select('*')
       .order('created_at', { ascending: false })
+      
+    const { data: productsData } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false })
+      
+    let combined: DataSource[] = sourcesData || []
     
-    if (data) setSources(data)
+    if (productsData) {
+      const productSources: DataSource[] = productsData.map(p => ({
+        id: p.id,
+        type: 'product',
+        source_path: `Product: ${p.name}`,
+        status: p.status,
+        created_at: p.created_at,
+        metadata: {
+          name: p.name,
+          description: p.description,
+          category: p.category,
+          price: p.price,
+          link: p.link,
+          image_url: p.image_url,
+          size: p.size,
+          color: p.color
+        }
+      }))
+      combined = [...combined, ...productSources].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+    }
+    
+    setSources(combined)
     setLoading(false)
   }
 
   const handleOpenDialog = (type: string) => {
+    setEditingSourceId(null)
     setSourceType(type)
     setDialogOpen(true)
     setUrlInput("")
@@ -75,7 +110,24 @@ export function DataSources() {
     setProductPrice("")
     setProductLink("")
     setProductImage("")
+    setProductSize("")
+    setProductColor("")
     setProductError("")
+  }
+
+  const handleEditSource = (source: DataSource) => {
+    setEditingSourceId(source.id)
+    setSourceType('product')
+    setProductName(source.metadata?.name || "")
+    setProductDescription(source.metadata?.description || "")
+    setProductCategory(source.metadata?.category || "")
+    setProductPrice(source.metadata?.price || "")
+    setProductLink(source.metadata?.link || "")
+    setProductImage(source.metadata?.image_url || "")
+    setProductSize(source.metadata?.size || "")
+    setProductColor(source.metadata?.color || "")
+    setProductError("")
+    setDialogOpen(true)
   }
 
   const handleAddSource = async () => {
@@ -93,7 +145,7 @@ export function DataSources() {
         return
       }
       sourcePath = `Product: ${productName}`
-    } else if ((sourceType === 'file' || sourceType === 'table') && file) {
+    } else if (!editingSourceId && (sourceType === 'file' || sourceType === 'table') && file) {
       const fileExt = file.name.split('.').pop()
       const fileName = `${Math.random()}.${fileExt}`
       const filePath = `${fileName}`
@@ -120,23 +172,82 @@ export function DataSources() {
         category: productCategory,
         price: productPrice,
         link: productLink,
-        image_url: productImage
+        image_url: productImage,
+        size: productSize,
+        color: productColor
       } : {}
 
-    const { error } = await supabase
-      .from('knowledge_sources')
-      .insert([
-        { 
-          type: sourceType, 
-          source_path: sourcePath, 
-          status: 'active',
-          metadata: metadataPayload
+    if (editingSourceId) {
+      if (sourceType === 'product') {
+        const { error } = await supabase
+          .from('products')
+          .update({
+            name: productName,
+            description: productDescription,
+            category: productCategory,
+            price: productPrice,
+            link: productLink,
+            image_url: productImage,
+            size: productSize,
+            color: productColor
+          })
+          .eq('id', editingSourceId)
+          
+        if (!error) {
+          setDialogOpen(false)
+          fetchSources()
         }
-      ])
-      
-    if (!error) {
-      setDialogOpen(false)
-      fetchSources()
+      } else {
+        const { error } = await supabase
+          .from('knowledge_sources')
+          .update({
+            source_path: sourcePath,
+            metadata: metadataPayload
+          })
+          .eq('id', editingSourceId)
+          
+        if (!error) {
+          setDialogOpen(false)
+          fetchSources()
+        }
+      }
+    } else {
+      if (sourceType === 'product') {
+        const { error } = await supabase
+          .from('products')
+          .insert([{
+            name: productName,
+            description: productDescription,
+            category: productCategory,
+            price: productPrice,
+            link: productLink,
+            image_url: productImage,
+            size: productSize,
+            color: productColor,
+            status: 'active'
+          }])
+          
+        if (!error) {
+          setDialogOpen(false)
+          fetchSources()
+        }
+      } else {
+        const { error } = await supabase
+          .from('knowledge_sources')
+          .insert([
+            { 
+              type: sourceType, 
+              source_path: sourcePath, 
+              status: 'active',
+              metadata: metadataPayload
+            }
+          ])
+          
+        if (!error) {
+          setDialogOpen(false)
+          fetchSources()
+        }
+      }
     }
     setUploading(false)
   }
@@ -210,10 +321,15 @@ export function DataSources() {
                     <p className="text-sm text-gray-500 capitalize">{source.type}</p>
                   </div>
                 </div>
-                <div>
+                <div className="flex items-center space-x-2">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${source.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                     {source.status}
                   </span>
+                  {source.type === 'product' && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-blue-600" onClick={() => handleEditSource(source)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}
@@ -227,7 +343,7 @@ export function DataSources() {
           <DialogHeader>
             <DialogTitle>
               {sourceType === 'integration' ? 'Add Integration' : 
-               sourceType === 'product' ? 'Add Product' : 
+               sourceType === 'product' ? (editingSourceId ? 'Edit Product' : 'Add Product') : 
                'Add Data Source'}
             </DialogTitle>
           </DialogHeader>
@@ -260,6 +376,24 @@ export function DataSources() {
                     placeholder="e.g. Electronics" 
                     value={productCategory}
                     onChange={(e) => setProductCategory(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="productSize">Size</Label>
+                  <Input 
+                    id="productSize" 
+                    placeholder="e.g. M, L, XL or 42" 
+                    value={productSize}
+                    onChange={(e) => setProductSize(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="productColor">Couleur</Label>
+                  <Input 
+                    id="productColor" 
+                    placeholder="e.g. Red, Blue, Black" 
+                    value={productColor}
+                    onChange={(e) => setProductColor(e.target.value)}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -352,7 +486,7 @@ export function DataSources() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={uploading}>Cancel</Button>
             <Button onClick={handleAddSource} disabled={uploading}>
               {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
+              {editingSourceId ? 'Update' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

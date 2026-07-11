@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/layout/Sidebar"
+import { PlaybookProvider } from "@/lib/playbookStore"
 
 export default function DashboardLayout({
   children,

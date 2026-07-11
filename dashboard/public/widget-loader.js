@@ -8,7 +8,7 @@
     container.style.position = 'fixed';
     container.style.bottom = '0';
     container.style.right = '0';
-    container.style.width = '400px';
+    container.style.width = '460px';
     container.style.height = '800px';
     container.style.maxWidth = '100vw';
     container.style.maxHeight = '100vh';
