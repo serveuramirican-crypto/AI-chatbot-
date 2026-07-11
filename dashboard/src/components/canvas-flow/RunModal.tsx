@@ -30,6 +30,33 @@ interface LogEntry {
   message: string;
 }
 
+interface RunEdge {
+  id: string;
+  from: string;
+  to: string;
+  sourceHandleId?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  role: "bot" | "user";
+  text: string;
+  buttons?: { id: string; label: string }[];
+  closingText?: string;
+  quickReplies?: string[];
+  productCards?: any[];
+  chosenButtonId?: string;
+}
+
+type RunState = "idle" | "running" | "waiting" | "done";
+
+interface RunModalProps {
+  nodes: any[];
+  edges: RunEdge[];
+  agentsMap?: Record<string, AgentConfig>;
+  onClose: () => void;
+}
+
 const makeId = () => Math.random().toString(36).slice(2, 9);
 const timestamp = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 

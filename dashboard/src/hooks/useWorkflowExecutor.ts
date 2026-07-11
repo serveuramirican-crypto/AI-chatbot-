@@ -179,7 +179,7 @@ export function useWorkflowExecutor(projectId: string | null) {
           capturedInput = "";
 
           try {
-            const agentRes = await fetch("/api/chat/agent", {
+            const agentRes: Response = await fetch("/api/chat/agent", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
