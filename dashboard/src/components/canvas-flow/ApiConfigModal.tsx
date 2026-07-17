@@ -75,7 +75,7 @@ export default function ApiConfigModal({ data, onChangeData, onClose }: ApiConfi
         signal: controller.signal,
       };
 
-      if (data.method !== 'GET' && data.method !== 'HEAD') {
+      if (data.method !== 'GET' && (data.method as string) !== 'HEAD') {
         // If it's a POST/PUT, and body is not empty, we send it as JSON
         if (data.body.length > 0) {
           const bodyObj: Record<string, string> = {};
