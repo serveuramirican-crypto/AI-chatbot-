@@ -1524,7 +1524,7 @@ function CanvasFlowPageInner() {
       )}
 
       {/* ── Agent Studio — full-screen modal, outside panning layer ─────────── */}
-      <AgentStudio apiNodes={nodes.filter(n => n.type === 'api').map(n => ({ id: n.id, ...n.data })) as ApiNodeData[]} />
+      <AgentStudio apiNodes={nodes.filter(n => n.type === 'api').map(n => ({ id: n.id, ...(n as any).data })) as ApiNodeData[]} />
 
       {/* ── Widget Script Modal ─────────────────────────────────────────────────── */}
       {showWidgetScriptModal && (
