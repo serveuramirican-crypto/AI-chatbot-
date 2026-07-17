@@ -10,6 +10,7 @@ export interface ProductItem {
   size?: string;
   category?: string;
   fabric?: string;
+  buttons?: any[];
 }
 
 /**

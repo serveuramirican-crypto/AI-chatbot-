@@ -6,10 +6,12 @@ interface MessageSettingsPanelProps {
   variants: string[];
   waitForInput: boolean;
   saveEntireReply: boolean;
+  captureVariable?: string;
   buttons: NodeButton[];
   onChangeVariants: (variants: string[]) => void;
   onChangeWait: (wait: boolean) => void;
   onChangeSaveReply: (save: boolean) => void;
+  onChangeCaptureVariable?: (val: string) => void;
   onChangeButtons: (buttons: NodeButton[]) => void;
   onDelete?: () => void;
 }
@@ -18,10 +20,12 @@ export default function MessageSettingsPanel({
   variants,
   waitForInput,
   saveEntireReply,
+  captureVariable,
   buttons,
   onChangeVariants,
   onChangeWait,
   onChangeSaveReply,
+  onChangeCaptureVariable,
   onChangeButtons,
   onDelete,
 }: MessageSettingsPanelProps) {
@@ -231,25 +235,58 @@ export default function MessageSettingsPanel({
 
         {/* Save Entire Reply Toggle — only shown when waitForInput is enabled */}
         {waitForInput && (
-          <div className="flex items-center justify-between py-3 border-t border-gray-100">
-            <div className="flex items-center gap-2">
-              <SaveAll size={14} className="text-indigo-500 shrink-0" />
-              <div>
-                <span className="text-sm font-medium text-gray-700">Save entire reply</span>
-                <p className="text-[11px] text-gray-400 leading-tight mt-0.5">
-                  Passes user&apos;s reply as context to the connected AI Agent
-                </p>
+          <div className="flex flex-col border-t border-gray-100 py-3 mt-2">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <SaveAll size={14} className="text-indigo-500 shrink-0" />
+                <div>
+                  <span className="text-sm font-medium text-gray-700">Capture User Reply</span>
+                  <p className="text-[11px] text-gray-400 leading-tight mt-0.5">
+                    Save the user&apos;s answer as a variable
+                  </p>
+                </div>
               </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={saveEntireReply}
+                  onChange={(e) => onChangeSaveReply(e.target.checked)}
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500" />
+              </label>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={saveEntireReply}
-                onChange={(e) => onChangeSaveReply(e.target.checked)}
-              />
-              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500" />
-            </label>
+
+            {saveEntireReply && (
+              <div className="mt-1 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Save entire reply to...</label>
+                <div className="relative">
+                  <select
+                    className="w-full bg-white border border-gray-200 rounded-md py-1.5 px-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={captureVariable || 'last_utterance'}
+                    onChange={(e) => {
+                      if (e.target.value === 'create_new') {
+                        const val = prompt('Enter new variable name (e.g. name, email, phone):');
+                        if (val && val.trim() !== '' && onChangeCaptureVariable) {
+                          onChangeCaptureVariable(val.trim());
+                        }
+                      } else if (onChangeCaptureVariable) {
+                        onChangeCaptureVariable(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="last_utterance">last_utterance</option>
+                    <option value="name">name</option>
+                    <option value="email">email</option>
+                    <option value="phone">phone</option>
+                    {captureVariable && !['last_utterance', 'name', 'email', 'phone'].includes(captureVariable) && (
+                      <option value={captureVariable}>{captureVariable}</option>
+                    )}
+                    <option value="create_new" className="font-medium text-blue-600">Create variable...</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

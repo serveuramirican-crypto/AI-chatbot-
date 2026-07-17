@@ -8,6 +8,7 @@ import {
   Database,
   Code,
   MessageSquare,
+  MessageCircle,
   Terminal,
   Users,
   Workflow,
@@ -20,9 +21,8 @@ import {
 const navigation = [
   { name: 'Overview', href: '/overview', icon: LayoutDashboard },
   { name: 'Client Tracking', href: '/client-tracking', icon: Users },
+  { name: 'Chats', href: '/chats', icon: MessageCircle },
   { name: 'knowledge-base 101', href: '/knowledge-base', icon: Database },
-  { name: 'Playbooks', href: '/playbooks', icon: BookOpen },
-  { name: 'Script Generator', href: '/script-generator', icon: Code },
   { name: 'Chat Playground', href: '/playground', icon: Terminal },
   { name: 'Canvas Flow', href: '/canvas-flow', icon: Workflow },
 ]

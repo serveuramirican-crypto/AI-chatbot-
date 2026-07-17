@@ -28,6 +28,8 @@ import MessageSettingsPanel from "./MessageSettingsPanel"
 import RunModal from "./RunModal"
 import ChatDesignPanel, { ChatThemeProvider } from "./ChatDesignPanel"
 import CanvasEdges from "./CanvasEdges"
+import CarouselNode, { CarouselNodeData } from "./CarouselNode"
+import CarouselSettingsPanel from "./CarouselSettingsPanel"
 import PlaybookReferenceNode from "./PlaybookReferenceNode"
 import AgentNode from "./AgentNode"
 import AgentStudio from "./AgentStudio"
@@ -46,8 +48,12 @@ import {
   publishWorkflow,
 } from "@/lib/workflowStore"
 
+import ApiNode, { ApiNodeData } from "./ApiNode"
+import ApiSettingsPanel from "./ApiSettingsPanel"
+import ApiConfigModal from "./ApiConfigModal"
+
 // ── Types ─────────────────────────────────────────────────────────────────────
-type FlowNode = MessageNodeData | PlaybookReferenceNodeData | AgentNodeData
+type FlowNode = MessageNodeData | PlaybookReferenceNodeData | AgentNodeData | CarouselNodeData | ApiNodeData
 interface Point { x: number; y: number }
 interface Edge {
   id: string
@@ -99,6 +105,7 @@ function CanvasFlowPageInner() {
   const [edges, setEdges] = useState<Edge[]>([])
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [editingApiNodeId, setEditingApiNodeId] = useState<string | null>(null)
   const [showRunModal, setShowRunModal] = useState(false)
   const [showDesignPanel, setShowDesignPanel] = useState(false)
   const [showWidgetScriptModal, setShowWidgetScriptModal] = useState(false)
@@ -111,6 +118,12 @@ function CanvasFlowPageInner() {
     mouseX: number
     mouseY: number
   } | null>(null)
+
+  // Carousel computed offsets
+  const [carouselOffsets, setCarouselOffsets] = useState<Record<string, Record<string, number>>>({})
+  const handleCarouselOffsetsUpdate = useCallback((nodeId: string, offsets: Record<string, number>) => {
+    setCarouselOffsets(prev => ({ ...prev, [nodeId]: offsets }))
+  }, [])
 
   // Pan state
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 })
@@ -412,6 +425,40 @@ function CanvasFlowPageInner() {
       return
     }
 
+    // ── Capture drop ─────────────────────────────────────────────────────────
+    if (actionType === 'Capture') {
+      // Find if we dropped over a message node
+      const targetNode = nodesRef.current.find(n => {
+        if (n.type !== 'message') return false
+        const w = 266; // MESSAGE_NODE_WIDTH
+        const h = 150; // Approximate height with some padding for buttons
+        return position.x >= n.position.x && position.x <= n.position.x + w &&
+          position.y >= n.position.y && position.y <= n.position.y + h
+      })
+
+      if (targetNode) {
+        setNodes(prev => prev.map(n =>
+          n.id === targetNode.id ? { ...n, saveEntireReply: true } as FlowNode : n
+        ))
+        setActiveNodeId(targetNode.id)
+        return
+      }
+
+      // If not dropped on a message node, create a new one with capture enabled
+      const newNode: FlowNode = {
+        id: generateId(),
+        type: 'message',
+        variants: ['Wait for reply'],
+        waitForInput: true,
+        saveEntireReply: true,
+        buttons: [],
+        position,
+      }
+      setNodes(prev => [...prev, newNode])
+      setActiveNodeId(newNode.id)
+      return
+    }
+
     const newNode: FlowNode = {
       id: generateId(),
       type: 'message',
@@ -608,6 +655,28 @@ function CanvasFlowPageInner() {
         dragSourceRef.current = null
         dragHandleRef.current = undefined
       }
+    } else if (label === "Carousel") {
+      const newNode: CarouselNodeData = {
+        id: `carousel_${Date.now()}`,
+        type: "carousel",
+        cards: [],
+        position: { x: toPt.x, y: toPt.y - 40 },
+      }
+      setNodes(prev => [...prev, newNode])
+      setActiveNodeId(newNode.id)
+
+      if (dragSourceRef.current) {
+        const newEdge = {
+          id: `edge_${Date.now()}`,
+          from: dragSourceRef.current!,
+          to: newNode.id,
+          sourceHandleId: dragHandleRef.current,
+        }
+        console.log('[CanvasFlow] Dropdown edge:', newEdge)
+        setEdges(prev => [...prev, newEdge])
+        dragSourceRef.current = null
+        dragHandleRef.current = undefined
+      }
     } else if (label === "AI Agent") {
       // Open the agent picker at the current drop point
       setAgentPickerPos({
@@ -628,6 +697,36 @@ function CanvasFlowPageInner() {
       })
       // Don't call handleDismiss here — picker takes over; dismiss after pick
       return
+    } else if (label === "API") {
+      const newNode: ApiNodeData = {
+        id: `api_${Date.now()}`,
+        type: "api",
+        name: "Untitled API",
+        method: "GET",
+        url: "",
+        headers: [],
+        params: [],
+        body: [],
+        timeout: 20,
+        asyncExecution: false,
+        captureResponse: false,
+        failurePath: false,
+        position: { x: toPt.x, y: toPt.y - 40 },
+      }
+      setNodes(prev => [...prev, newNode])
+      setActiveNodeId(newNode.id)
+
+      if (dragSourceRef.current) {
+        const newEdge = {
+          id: `edge_${Date.now()}`,
+          from: dragSourceRef.current!,
+          to: newNode.id,
+          sourceHandleId: dragHandleRef.current,
+        }
+        setEdges(prev => [...prev, newEdge])
+        dragSourceRef.current = null
+        dragHandleRef.current = undefined
+      }
     }
     handleDismiss()
   }, [toPt, handleDismiss, createAgent])
@@ -663,7 +762,7 @@ function CanvasFlowPageInner() {
   const cursorStyle = isPanningState ? "grabbing" : flowState === "dragging" ? "crosshair" : "grab"
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden bg-[#f0f2f5]">
+    <div className="relative flex h-full w-full overflow-hidden" style={{ background: "radial-gradient(circle at 50% 50%, #747C85 0%, #666E77 50%, #5F6770 100%)" }}>
 
       {/* ── Left Sidebar – Workflows Manager ──────────────────────────────── */}
       <aside className="relative z-20 flex w-[200px] shrink-0 flex-col border-r border-[#2a2d35] bg-[#1c1f26]">
@@ -698,8 +797,8 @@ function CanvasFlowPageInner() {
               <div
                 key={wf.id}
                 className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition ${wf.id === activeWorkflowId
-                    ? 'bg-white/10'
-                    : 'hover:bg-white/5'
+                  ? 'bg-white/10'
+                  : 'hover:bg-white/5'
                   }`}
               >
                 <Workflow className="h-3.5 w-3.5 shrink-0 text-gray-400" />
@@ -799,10 +898,16 @@ function CanvasFlowPageInner() {
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage: "radial-gradient(circle, #c8cdd8 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, #C9CED3 1px, transparent 1px)",
             backgroundSize: "24px 24px",
             backgroundPosition: `${pan.x}px ${pan.y}px`
           }}
+        />
+
+        {/* ── Black Glow / Vignette ───────────────────────────────────────── */}
+        <div 
+          className="absolute inset-0 pointer-events-none" 
+          style={{ background: "radial-gradient(circle, transparent 40%, rgba(0,0,0,0.6) 120%)" }} 
         />
 
         {/* ── Panning Layer ─────────────────────────────────────────────────── */}
@@ -908,12 +1013,12 @@ function CanvasFlowPageInner() {
             style={{ left: startNodePos.x, top: startNodePos.y + (START_NODE_HEIGHT / 2), transform: "translateY(-50%)" }}
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => handleNodeMouseDown(e, "start")}
-                  /* Input port: completes a pending port-to-port connection */
-                  onMouseUp={(e) => {
-                    if (isDragging.current && dragSourceRef.current) {
-                      handleConnectionEnd('start')
-                    }
-                  }}
+            /* Input port: completes a pending port-to-port connection */
+            onMouseUp={(e) => {
+              if (isDragging.current && dragSourceRef.current) {
+                handleConnectionEnd('start')
+              }
+            }}
           >
             <StartNode
               onPortMouseDown={(e) => handlePortMouseDown(e, "start")}
@@ -1036,6 +1141,79 @@ function CanvasFlowPageInner() {
                   />
                 </div>
               )
+            } else if (node.type === 'carousel') {
+              const carouselNode = node as CarouselNodeData
+              const connectedHandles = new Set(
+                edges
+                  .filter(e => e.from === node.id && e.sourceHandleId)
+                  .map(e => e.sourceHandleId!)
+              )
+              return (
+                <div
+                  key={node.id}
+                  className="absolute z-20 cursor-grab active:cursor-grabbing"
+                  style={{ left: node.position.x, top: node.position.y }}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                  /* Input port: completes a pending port-to-port connection */
+                  onMouseUp={(e) => {
+                    if (isDragging.current && dragSourceRef.current) {
+                      handleConnectionEnd(node.id)
+                    }
+                  }}
+                >
+                  <CarouselNode
+                    data={carouselNode}
+                    isActive={activeNodeId === node.id}
+                    connectedHandles={connectedHandles}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveNodeId(node.id)
+                    }}
+                    onPortMouseDown={(e, handleId) => handlePortMouseDown(e, node.id, handleId)}
+                    onPortClick={(e, handleId) => handlePortClick(e, node.id, handleId)}
+                    onUpdateOffsets={handleCarouselOffsetsUpdate}
+                  />
+                </div>
+              )
+            } else if (node.type === 'api') {
+              const apiNode = node as ApiNodeData
+              const connectedHandles = new Set(
+                edges
+                  .filter(e => e.from === node.id && e.sourceHandleId)
+                  .map(e => e.sourceHandleId!)
+              )
+              return (
+                <div
+                  key={node.id}
+                  className="absolute z-20 cursor-grab active:cursor-grabbing"
+                  style={{ left: node.position.x, top: node.position.y }}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                  /* Input port: completes a pending port-to-port connection */
+                  onMouseUp={(e) => {
+                    if (isDragging.current && dragSourceRef.current) {
+                      handleConnectionEnd(node.id)
+                    }
+                  }}
+                >
+                  <ApiNode
+                    data={apiNode}
+                    isActive={activeNodeId === node.id}
+                    connected={
+                      edges.some(e => e.from === node.id && !e.sourceHandleId) ||
+                      (showLine && dragSourceRef.current === node.id && !dragHandleRef.current)
+                    }
+                    connectedHandles={connectedHandles}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveNodeId(node.id)
+                    }}
+                    onPortMouseDown={(e, handleId) => handlePortMouseDown(e, node.id, handleId)}
+                    onPortClick={(e, handleId) => handlePortClick(e, node.id, handleId)}
+                  />
+                </div>
+              )
             }
             return null
           })}
@@ -1148,11 +1326,10 @@ function CanvasFlowPageInner() {
           {/* Design Chat Button */}
           <button
             onClick={() => setShowDesignPanel(prev => !prev)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium shadow transition active:scale-95 ${
-              showDesignPanel
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium shadow transition active:scale-95 ${showDesignPanel
                 ? "bg-purple-600 text-white hover:bg-purple-700"
                 : "bg-white text-purple-700 border border-purple-200 hover:bg-purple-50"
-            }`}
+              }`}
           >
             <Sparkles className="h-3.5 w-3.5" />
             Design Chat
@@ -1168,7 +1345,7 @@ function CanvasFlowPageInner() {
             Run
           </button>
           <div className="flex overflow-hidden rounded-full shadow relative">
-            <button 
+            <button
               onClick={async () => {
                 if (!activeWorkflowId || isPublishing) return;
                 setIsPublishing(true);
@@ -1215,10 +1392,12 @@ function CanvasFlowPageInner() {
                 variants={activeNode.variants}
                 waitForInput={activeNode.waitForInput}
                 saveEntireReply={activeNode.saveEntireReply ?? false}
+                captureVariable={activeNode.captureVariable}
                 buttons={activeNode.buttons ?? []}
                 onChangeVariants={(variants) => handleNodeUpdate({ ...activeNode, variants })}
                 onChangeWait={(waitForInput) => handleNodeUpdate({ ...activeNode, waitForInput })}
                 onChangeSaveReply={(saveEntireReply) => handleNodeUpdate({ ...activeNode, saveEntireReply })}
+                onChangeCaptureVariable={(captureVariable) => handleNodeUpdate({ ...activeNode, captureVariable })}
                 onChangeButtons={(buttons: NodeButton[]) => {
                   handleNodeUpdate({ ...activeNode, buttons })
                   // Clean up edges for deleted buttons
@@ -1238,8 +1417,75 @@ function CanvasFlowPageInner() {
                 }}
               />
             )
+          } else if (activeNode?.type === "carousel") {
+            const carouselNode = activeNode as CarouselNodeData
+            return (
+              <CarouselSettingsPanel
+                cards={carouselNode.cards}
+                onChangeCards={(cards) => {
+                  handleNodeUpdate({ ...carouselNode, cards })
+
+                  // Clean up edges for deleted buttons
+                  const allButtonIds = new Set(cards.flatMap(c => c.buttons?.map(b => b.id) || []))
+                  setEdges(prev =>
+                    prev.filter(e =>
+                      e.from !== carouselNode.id ||
+                      !e.sourceHandleId ||
+                      allButtonIds.has(e.sourceHandleId)
+                    )
+                  )
+                }}
+                onDelete={() => {
+                  setNodes(prev => prev.filter(n => n.id !== carouselNode.id))
+                  setEdges(prev => prev.filter(e => e.from !== carouselNode.id && e.to !== carouselNode.id))
+                  setActiveNodeId(null)
+                  // Also clear offsets
+                  setCarouselOffsets(prev => {
+                    const next = { ...prev }
+                    delete next[carouselNode.id]
+                    return next
+                  })
+                }}
+              />
+            )
+          } else if (activeNode?.type === "api") {
+            const apiNode = activeNode as ApiNodeData
+            return (
+              <ApiSettingsPanel
+                data={apiNode}
+                onEditTool={() => setEditingApiNodeId(apiNode.id)}
+                onRunTool={() => setEditingApiNodeId(apiNode.id)}
+                onChangeCaptureResponse={(captureResponse) => handleNodeUpdate({ ...apiNode, captureResponse })}
+                onChangeAsyncExecution={(asyncExecution) => handleNodeUpdate({ ...apiNode, asyncExecution })}
+                onChangeFailurePath={(failurePath) => {
+                  handleNodeUpdate({ ...apiNode, failurePath })
+                  if (!failurePath) {
+                    // Clean up fail edges if disabled
+                    setEdges(prev => prev.filter(e => e.from !== apiNode.id || e.sourceHandleId !== 'fail'))
+                  }
+                }}
+                onDelete={() => {
+                  setNodes(prev => prev.filter(n => n.id !== apiNode.id))
+                  setEdges(prev => prev.filter(e => e.from !== apiNode.id && e.to !== apiNode.id))
+                  setActiveNodeId(null)
+                }}
+              />
+            )
           }
           return null
+        })()}
+
+        {/* ── API Config Modal ──────────────────────────────────────────────── */}
+        {editingApiNodeId && (() => {
+          const apiNode = nodes.find(n => n.id === editingApiNodeId) as ApiNodeData | undefined
+          if (!apiNode) return null
+          return (
+            <ApiConfigModal
+              data={apiNode}
+              onChangeData={(data) => handleNodeUpdate(data)}
+              onClose={() => setEditingApiNodeId(null)}
+            />
+          )
         })()}
 
 
@@ -1250,7 +1496,7 @@ function CanvasFlowPageInner() {
 
         {/* ── Bottom Utility Bar ───────────────────────────────────────────── */}
         <div className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2">
-          <div className="flex items-center gap-1 rounded-xl bg-white px-3 py-2 shadow-lg">
+          <div className="flex items-center gap-1 rounded-xl bg-[#1c1f28] ring-1 ring-white/10 px-3 py-2 shadow-2xl">
             <ToolbarBtn label="Pan/Zoom"><Move className="h-4 w-4" /></ToolbarBtn>
             <ToolbarBtn label="Mini-map"><Map className="h-4 w-4" /></ToolbarBtn>
             <ToolbarBtn label="Chat"><MessageCircle className="h-4 w-4" /></ToolbarBtn>
@@ -1278,7 +1524,7 @@ function CanvasFlowPageInner() {
       )}
 
       {/* ── Agent Studio — full-screen modal, outside panning layer ─────────── */}
-      <AgentStudio />
+      <AgentStudio apiNodes={nodes.filter(n => n.type === 'api').map(n => ({ id: n.id, ...n.data })) as ApiNodeData[]} />
 
       {/* ── Widget Script Modal ─────────────────────────────────────────────────── */}
       {showWidgetScriptModal && (
@@ -1296,7 +1542,7 @@ function CanvasFlowPageInner() {
               </p>
               <div className="relative">
                 <pre className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs text-gray-700 font-mono overflow-x-auto whitespace-pre-wrap">
-{`<script src="\${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/widget-loader.js"></script>
+                  {`<script src="\${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/widget-loader.js"></script>
 <script>
   window.initAIChatbot({
     host: "\${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}",
@@ -1350,7 +1596,7 @@ function ToolbarBtn({ children, label }: { children: React.ReactNode; label: str
   return (
     <button
       title={label}
-      className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+      className="flex h-8 w-8 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white"
     >
       {children}
     </button>
@@ -1471,8 +1717,8 @@ function AgentPickerModal({
               </div>
               <span className="flex-1 truncate text-xs font-semibold text-white/80">{a.title}</span>
               <span className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${a.status === 'published'
-                  ? 'bg-emerald-900/40 text-emerald-400'
-                  : 'bg-amber-900/30 text-amber-400'
+                ? 'bg-emerald-900/40 text-emerald-400'
+                : 'bg-amber-900/30 text-amber-400'
                 }`}>
                 {a.status}
               </span>

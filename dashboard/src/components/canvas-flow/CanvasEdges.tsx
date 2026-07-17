@@ -27,11 +27,11 @@ const MSG_WIDTH    = 256;
 const MSG_DEFAULT_CENTER_Y = MSG_NODE_HEADER_H + MSG_NODE_BODY_H / 2;
 
 // ── Color palette ─────────────────────────────────────────────────────────────
-const C_IDLE_START  = '#60a5fa'; // blue-400
-const C_IDLE_END    = '#a78bfa'; // violet-400
-const C_ACTIVE      = '#3b82f6'; // blue-500
-const C_ARROW_IDLE  = '#94a3b8'; // slate-400
-const C_ARROW_ACT   = '#3b82f6';
+const C_IDLE_START  = 'white';
+const C_IDLE_END    = 'white';
+const C_ACTIVE      = 'white';
+const C_ARROW_IDLE  = 'white';
+const C_ARROW_ACT   = 'white';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface NodeButton { id: string; label: string }
@@ -65,6 +65,8 @@ interface CanvasEdgesProps {
   getPlaybook?: (id: string) => { exitConditions: ExitCondition[] } | undefined;
   /** Pass the agent store so edges can resolve agent exit-condition port positions */
   getAgent?: (id: string) => { exitConditions: ExitCondition[] } | undefined;
+  /** Pass carousel offsets to resolve carousel button positions */
+  carouselOffsets?: Record<string, Record<string, number>>;
 }
 
 // ── Bezier helpers ────────────────────────────────────────────────────────────
@@ -91,7 +93,7 @@ function getBezierMidpoint(
 export default function CanvasEdges({
   edges, nodes, startNodePos,
   selectedEdgeId, onSelectEdge, onDeleteEdge,
-  getPlaybook, getAgent,
+  getPlaybook, getAgent, carouselOffsets
 }: CanvasEdgesProps) {
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
@@ -192,23 +194,46 @@ export default function CanvasEdges({
               // No exit conditions — single default port centered in body
               y1 = sourceNode.position.y + PB_NODE_HEADER_H + PB_NODE_BODY_H / 2;
             }
-          } else {
             // ── message node source port ──────────────────────────────────
-            x1 = sourceNode.position.x + MSG_WIDTH;
-            if (edge.sourceHandleId && sourceNode.buttons?.length) {
-              const btnIdx = sourceNode.buttons.findIndex((b) => b.id === edge.sourceHandleId);
-              if (btnIdx === -1) return null;
-              y1 =
-                sourceNode.position.y +
-                MSG_NODE_HEADER_H + MSG_NODE_BODY_H +
-                btnIdx * (MSG_BUTTON_H + MSG_BUTTON_GAP) +
-                MSG_BUTTON_H / 2;
-              edgeLabel = sourceNode.buttons[btnIdx].label;
+            } else if (sourceNode.type === 'message' || sourceNode.type === undefined) {
+              x1 = sourceNode.position.x + MSG_WIDTH;
+              if (edge.sourceHandleId && sourceNode.buttons?.length) {
+                const btnIdx = sourceNode.buttons.findIndex((b) => b.id === edge.sourceHandleId);
+                if (btnIdx === -1) return null;
+                y1 =
+                  sourceNode.position.y +
+                  MSG_NODE_HEADER_H + MSG_NODE_BODY_H +
+                  btnIdx * (MSG_BUTTON_H + MSG_BUTTON_GAP) +
+                  MSG_BUTTON_H / 2;
+                edgeLabel = sourceNode.buttons[btnIdx].label;
+              } else {
+                y1 = sourceNode.position.y + MSG_DEFAULT_CENTER_Y;
+              }
+            // ── carousel node source port ─────────────────────────────────
+            } else if (sourceNode.type === 'carousel') {
+              x1 = sourceNode.position.x + 256; // CAROUSEL_WIDTH is 256
+              if (edge.sourceHandleId && carouselOffsets?.[sourceNode.id]?.[edge.sourceHandleId] !== undefined) {
+                y1 = sourceNode.position.y + carouselOffsets[sourceNode.id][edge.sourceHandleId];
+                // Find label just for tooltip/label rendering
+                let foundLabel = '';
+                if (sourceNode.cards) {
+                  for (const c of sourceNode.cards) {
+                    const b = c.buttons?.find((btn: any) => btn.id === edge.sourceHandleId);
+                    if (b) {
+                      foundLabel = b.label;
+                      break;
+                    }
+                  }
+                }
+                edgeLabel = foundLabel;
+              } else {
+                y1 = sourceNode.position.y + 33 + 20; // fallback to header + some offset
+              }
             } else {
-              y1 = sourceNode.position.y + MSG_DEFAULT_CENTER_Y;
+              x1 = sourceNode.position.x + 256;
+              y1 = sourceNode.position.y + 50;
             }
           }
-        }
 
         // ── 2. Target point ────────────────────────────────────────────────
         const targetNode = nodes.find((n) => n.id === edge.to);
@@ -222,6 +247,9 @@ export default function CanvasEdges({
           // Input port: left edge of the playbook node, centered vertically in header+body
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + PB_NODE_HEADER_H + PB_NODE_BODY_H / 2;
+        } else if (targetNode.type === 'carousel') {
+          x2 = targetNode.position.x;
+          y2 = targetNode.position.y + 33 + 20; // approx center of header + some body
         } else {
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + MSG_DEFAULT_CENTER_Y;
@@ -320,6 +348,7 @@ export default function CanvasEdges({
               style={{
                 pointerEvents: 'none',
                 transition: 'stroke-width 0.15s',
+                filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.8)) drop-shadow(0px 0px 4px rgba(255,255,255,0.3))',
                 // Non-animated fallback stroke so the path is always visible
                 ...(animClass ? {} : {}),
               }}

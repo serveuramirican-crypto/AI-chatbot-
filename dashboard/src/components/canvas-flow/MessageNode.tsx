@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { MessageSquare } from "lucide-react"
+import { MessageSquare, Camera } from "lucide-react"
 import ConnectorHandle from "./ConnectorHandle"
 
 export interface NodeButton {
@@ -19,6 +19,7 @@ export interface MessageNodeData {
   waitForInput: boolean
   /** When true, the user's text reply is captured and passed to the connected Agent node as its initial input */
   saveEntireReply?: boolean
+  captureVariable?: string
   position: { x: number; y: number }
   /** Optional list of buttons — each becomes an independent output port */
   buttons?: NodeButton[]
@@ -81,6 +82,19 @@ export default function MessageNode({
             {displayText}
           </p>
         </div>
+
+        {/* Capture block */}
+        {data.saveEntireReply && (
+          <div className="mx-3 mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs text-gray-700 shadow-sm transition hover:bg-gray-100">
+            <div className="flex items-center gap-2">
+              <div className="flex h-5 w-5 items-center justify-center rounded bg-gray-800 text-white">
+                <Camera className="h-3 w-3" />
+              </div>
+              <span className="font-medium">Save entire reply to: <span className="text-gray-500 font-normal">{"{" + (data.captureVariable || "last_utterance") + "}"}</span></span>
+            </div>
+            <div className="h-2 w-2 rounded-full border-2 border-gray-400"></div>
+          </div>
+        )}
 
         {/* Buttons section */}
         {hasButtons && (

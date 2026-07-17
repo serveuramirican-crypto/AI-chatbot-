@@ -13,6 +13,14 @@ import {
   MousePointerClick,
   Mic,
   Sparkles,
+  Zap,
+  Braces,
+  Network,
+  Code,
+  Brain,
+  PhoneForwarded,
+  Settings,
+  TerminalSquare,
 } from "lucide-react"
 
 interface ActionsDropdownProps {
@@ -53,6 +61,19 @@ const actions: ActionItem[] = [
   {
     icon: <GitBranch className="h-4 w-4 text-gray-500" />,
     label: "Logic",
+  },
+  {
+    icon: <TerminalSquare className="h-4 w-4 text-gray-500" />,
+    label: "DEV",
+    children: [
+      { icon: <Zap className="h-4 w-4 text-yellow-500" />, label: "Tool" },
+      { icon: <Braces className="h-4 w-4 text-blue-500" />, label: "Function" },
+      { icon: <Network className="h-4 w-4 text-green-500" />, label: "API" },
+      { icon: <Code className="h-4 w-4 text-gray-500" />, label: "Javascript" },
+      { icon: <Brain className="h-4 w-4 text-purple-500" />, label: "KB search" },
+      { icon: <PhoneForwarded className="h-4 w-4 text-red-500" />, label: "Call forward" },
+      { icon: <Settings className="h-4 w-4 text-gray-500" />, label: "Custom action" },
+    ]
   },
 ]
 

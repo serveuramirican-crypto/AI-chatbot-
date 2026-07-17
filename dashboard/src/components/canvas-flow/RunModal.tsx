@@ -19,6 +19,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { MessageNodeData } from "./MessageNode";
+import { ApiNodeData } from "./ApiNode";
 import type { AgentConfig } from "@/types/agent";
 import { useChatTheme } from "./ChatDesignPanel";
 
@@ -46,6 +47,7 @@ interface ChatMessage {
   quickReplies?: string[];
   productCards?: any[];
   chosenButtonId?: string;
+  isCarousel?: boolean;
 }
 
 type RunState = "idle" | "running" | "waiting" | "done";
@@ -82,9 +84,15 @@ function getProxyUrl(url: string | undefined): string {
 function ProductCard({
   product,
   compact = false,
+  isLocked = false,
+  isWaitingOnThis = false,
+  onButtonClick,
 }: {
   product: ProductItem;
   compact?: boolean;
+  isLocked?: boolean;
+  isWaitingOnThis?: boolean;
+  onButtonClick?: (label: string, id: string) => void;
 }) {
   return (
     <div
@@ -154,21 +162,51 @@ function ProductCard({
             </div>
           )}
         <div className="flex-1" /> {/* Spacer to push button to bottom */}
-        {/* Outlined button */}
-        <a
-          href={product.link || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 block w-full rounded-lg border border-gray-300 py-2 text-center text-xs font-semibold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
-        >
-          Voir le Produit ↓
-        </a>
+        {/* Buttons */}
+        {product.buttons && product.buttons.length > 0 ? (
+          <div className="mt-2 flex flex-col gap-1.5 w-full">
+            {product.buttons.map(btn => (
+              <button
+                key={btn.id}
+                disabled={isLocked || !isWaitingOnThis}
+                onClick={() => onButtonClick && onButtonClick(btn.label, btn.id)}
+                className={`block w-full rounded-lg border border-blue-200 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide transition-all ${isLocked
+                  ? "bg-gray-50 text-gray-400 border-gray-200 cursor-default"
+                  : isWaitingOnThis
+                    ? "bg-white text-blue-600 hover:bg-blue-50 active:scale-[0.98] cursor-pointer"
+                    : "bg-gray-50 text-gray-400 border-gray-200 cursor-default"
+                  }`}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <a
+            href={product.link || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 block w-full rounded-lg border border-gray-300 py-2 text-center text-xs font-semibold text-gray-700 transition hover:bg-gray-50 active:scale-[0.98]"
+          >
+            Voir le Produit ↓
+          </a>
+        )}
       </div>
     </div>
   );
 }
 
-function ProductCarousel({ products }: { products: ProductItem[] }) {
+function ProductCarousel({
+  products,
+  isLocked,
+  isWaitingOnThis,
+  onButtonClick
+}: {
+  products: ProductItem[];
+  isLocked?: boolean;
+  isWaitingOnThis?: boolean;
+  onButtonClick?: (label: string, id: string) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scroll = (dir: "left" | "right") => {
@@ -181,7 +219,13 @@ function ProductCarousel({ products }: { products: ProductItem[] }) {
   if (products.length === 1) {
     return (
       <div className="w-full">
-        <ProductCard product={products[0]} compact={false} />
+        <ProductCard
+          product={products[0]}
+          compact={false}
+          isLocked={isLocked}
+          isWaitingOnThis={isWaitingOnThis}
+          onButtonClick={onButtonClick}
+        />
       </div>
     );
   }
@@ -208,6 +252,9 @@ function ProductCarousel({ products }: { products: ProductItem[] }) {
             key={`${product.name}-${idx}`}
             product={product}
             compact={true}
+            isLocked={isLocked}
+            isWaitingOnThis={isWaitingOnThis}
+            onButtonClick={onButtonClick}
           />
         ))}
       </div>
@@ -254,10 +301,14 @@ export default function RunModal({
   const waitResolveRef = useRef<((payload: string) => void) | null>(null);
   // Track which chat message id is currently waiting for a button pick
   const waitingMsgIdRef = useRef<string | null>(null);
+  // Global variables storage
+  const globalVariablesRef = useRef<Record<string, string>>({});
   // Guard against React StrictMode double-invoking the mount effect
   const hasStartedRef = useRef(false);
   // Persistent session ID for the current run (one per agent node loop)
   const sessionIdRef = useRef<string | null>(null);
+  // Context of user selections across the entire flow
+  const globalContextRef = useRef<string[]>([]);
   /**
    * workflowMemory: maps agentNodeId → captured user reply text.
    * Set by a Message block with saveEntireReply=true, consumed once by
@@ -289,7 +340,7 @@ export default function RunModal({
   // ── Graph traversal helpers ──────────────────────────────────────────────────
 
   /** First node reachable from 'start' via a body-port edge (no sourceHandleId). */
-  const findStartNode = useCallback((): MessageNodeData | null => {
+  const findStartNode = useCallback((): any | null => {
     const startEdge = edges.find(
       (e) => e.from === "start" && !e.sourceHandleId,
     );
@@ -309,7 +360,7 @@ export default function RunModal({
     (
       fromNodeId: string,
       clickedButtonId?: string,
-    ): { node: MessageNodeData | null; deadEnd: boolean } => {
+    ): { node: any | null; deadEnd: boolean } => {
       let matchingEdge: RunEdge | undefined;
 
       if (clickedButtonId) {
@@ -347,6 +398,8 @@ export default function RunModal({
     setRunState("running");
     setCurrentNode(null);
     sessionIdRef.current = null; // Reset session on each new run
+    globalContextRef.current = []; // Clear context
+    globalVariablesRef.current = {}; // Clear global variables
     workflowMemoryRef.current = {}; // Clear any stale captured replies
 
     await sleep(400);
@@ -373,7 +426,7 @@ export default function RunModal({
       return;
     }
 
-    let node: MessageNodeData = firstNode;
+    let node: any = firstNode;
     let capturedInput = "";
 
     while (true) {
@@ -459,9 +512,23 @@ export default function RunModal({
             // Auto-send the captured reply directly to the API (no user wait)
             const inputToSend = capturedInput;
             capturedInput = ""; // Consume it
+
+            // Build a full context string from ALL user selections so far
+            const allSelectionsCtx = globalContextRef.current.join(", ");
+            // Build the combined message: all context + current input (deduplicated)
+            const lastCtxEntry = globalContextRef.current.at(-1) || "";
+            const alreadyInCtx = lastCtxEntry.toLowerCase().includes(inputToSend.toLowerCase());
+            const combinedMsg = allSelectionsCtx
+              ? (alreadyInCtx ? allSelectionsCtx : `${allSelectionsCtx}, ${inputToSend}`)
+              : inputToSend;
+
             addLog(
               "log",
               `[API] Calling /api/chat/agent with agentId=${agentId} (captured reply)`,
+            );
+            addLog(
+              "info",
+              `[Context] Sending full conversation context: "${combinedMsg.slice(0, 120)}…"`,
             );
             try {
               const agentRes: Response = await fetch("/api/chat/agent", {
@@ -469,8 +536,9 @@ export default function RunModal({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   agentId,
-                  messages: [{ role: "user", content: inputToSend }],
+                  messages: [{ role: "user", content: combinedMsg }],
                   sessionId: sessionIdRef.current ?? undefined,
+                  userContext: allSelectionsCtx || undefined,
                 }),
               });
 
@@ -618,6 +686,7 @@ export default function RunModal({
                     agentId,
                     messages: [{ role: "user", content: userLabel }],
                     sessionId: sessionIdRef.current ?? undefined,
+                    userContext: globalContextRef.current.length > 0 ? globalContextRef.current.join("\n") : undefined,
                   }),
                 });
 
@@ -695,9 +764,69 @@ export default function RunModal({
         }
       }
 
+      // ── Carousel node handling ────────────────────────────────────────
+      if (node.type === 'carousel') {
+        await sleep(400);
+        addLog("log", `[Carousel] Displaying carousel cards`);
+
+        const productCards: ProductItem[] = (node.cards || []).map((card: any) => ({
+          name: card.title || 'Untitled',
+          description: card.description || '',
+          image_url: card.imageUrl || '',
+          link: '#',
+          buttons: card.buttons || [],
+        }));
+
+        const allButtons = (node.cards || []).flatMap((c: any) => c.buttons || []);
+        const hasButtons = allButtons.length > 0;
+
+        const msgId = addChat({
+          role: "bot",
+          text: "",
+          productCards: productCards.length > 0 ? productCards : undefined,
+          // We don't attach buttons to the message level for carousel since they render in the cards.
+          // We can omit buttons here or pass them just for tracking. We will pass them but not render them at the bottom.
+          buttons: hasButtons ? allButtons : undefined,
+          isCarousel: true,
+        });
+
+        if (hasButtons) {
+          await sleep(300);
+          addLog("log", `[Node] Pausing — Carousel buttons present`);
+          addLog("info", "[Flow] Waiting for user input...");
+          setRunState("waiting");
+          waitingMsgIdRef.current = msgId;
+
+          const rawPayload = await new Promise<string>((resolve) => {
+            waitResolveRef.current = resolve;
+          });
+
+          waitingMsgIdRef.current = null;
+          setRunState("running");
+
+          const isButtonPayload = rawPayload.startsWith("BTN::");
+          const [userLabel, clickedButtonId] = isButtonPayload
+            ? rawPayload.slice(5).split("::")
+            : [rawPayload, undefined];
+
+          addLog("log", `[Input] Received: "${userLabel}"${clickedButtonId ? ` (button: ${clickedButtonId})` : ""}`);
+
+          if (isButtonPayload && clickedButtonId) {
+            const nextEdge = edges.find((e) => e.from === node.id && e.sourceHandleId === clickedButtonId);
+            if (nextEdge) {
+              node = nodes.find((n) => n.id === nextEdge.to);
+              continue;
+            }
+          }
+        }
+
+        // If we reach here (no next edge, or no buttons), we end this path
+        break;
+      }
+
       // ── Message node handling ─────────────────────────────────────────
 
-      const text = node.variants[0]?.trim() || "(empty message)";
+      const text = node.variants?.[0]?.trim() || "(empty message)";
       await sleep(400);
       addLog("log", `[Message] Sending: "${text}"`);
 
@@ -743,6 +872,10 @@ export default function RunModal({
           // ── Save entire reply: route captured text to the connected Agent node ──
           const msgNodeTyped = node as MessageNodeData;
           if (msgNodeTyped.saveEntireReply) {
+            const varName = msgNodeTyped.captureVariable || "last_utterance";
+            globalVariablesRef.current[varName] = userLabel;
+            addLog("info", `[Capture] Saved variable "${varName}" = "${userLabel}"`);
+
             // Find the body-port outgoing edge (no sourceHandleId) from this Message
             const outEdge = edges.find(
               (e) => e.from === node.id && !e.sourceHandleId,
@@ -815,6 +948,64 @@ export default function RunModal({
         continue;
       }
 
+      // ── API node handling ─────────────────────────────────────────
+      if (node.type === "api") {
+        const apiData = node as ApiNodeData;
+        addLog("info", `[API] Preparing to call API: "${apiData.name || 'Untitled API'}"`);
+        
+        const interpolate = (str: string) => {
+          let res = str;
+          Object.entries(globalVariablesRef.current).forEach(([k, v]) => {
+            res = res.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+          });
+          return res;
+        };
+
+        const finalUrl = interpolate(apiData.url || "");
+        const bodyObj: Record<string, string> = {};
+        
+        apiData.body?.forEach(b => {
+          if (b.key) {
+            bodyObj[b.key] = interpolate(b.value);
+          }
+        });
+
+        addLog("log", `[API] Method: ${apiData.method || "GET"}`);
+        addLog("log", `[API] Final URL: ${finalUrl}`);
+        if (Object.keys(bodyObj).length > 0) {
+          addLog("log", `[API] Request Body: ${JSON.stringify(bodyObj, null, 2)}`);
+        }
+
+        try {
+          const options: RequestInit = { method: apiData.method || 'GET' };
+          const headers = new Headers();
+          apiData.headers?.forEach(h => {
+             if (h.key && h.value) headers.append(h.key, interpolate(h.value));
+          });
+          
+          if (options.method !== 'GET' && options.method !== 'HEAD' && Object.keys(bodyObj).length > 0) {
+            options.body = JSON.stringify(bodyObj);
+            headers.set('Content-Type', 'application/json');
+          }
+          options.headers = headers;
+          
+          addLog("log", `[API] Sending request...`);
+          // Note: In browser, this may fail due to CORS. We simulate or actually fetch if possible.
+          // For make.com webhook, it usually supports CORS.
+          const res = await fetch(finalUrl, options);
+          const resText = await res.text();
+          addLog("info", `[API] Response ${res.status}: ${resText.slice(0, 100)}${resText.length > 100 ? "..." : ""}`);
+        } catch (e: any) {
+          addLog("error", `[API] Error: ${e.message}`);
+        }
+
+        await sleep(300);
+        const { node: nextNode, deadEnd } = findNextNode(node.id, undefined);
+        if (deadEnd || !nextNode) break;
+        node = nextNode;
+        continue;
+      }
+
       // No input needed — auto-advance via body port
       const { node: nextNode, deadEnd } = findNextNode(node.id, undefined);
       if (deadEnd || !nextNode) break;
@@ -843,6 +1034,7 @@ export default function RunModal({
     setChat((prev) => [...prev, { id: makeId(), role: "user", text }]);
 
     if (waitResolveRef.current) {
+      globalContextRef.current.push(text);
       waitResolveRef.current(text);
       waitResolveRef.current = null;
     } else {
@@ -871,6 +1063,7 @@ export default function RunModal({
       setChat((prev) => [...prev, { id: makeId(), role: "user", text: label }]);
 
       if (waitResolveRef.current) {
+        globalContextRef.current.push(label);
         waitResolveRef.current(`BTN::${label}::${btnId}`);
         waitResolveRef.current = null;
       }
@@ -897,6 +1090,7 @@ export default function RunModal({
       setChat((prev) => [...prev, { id: makeId(), role: "user", text }]);
       // Feed the text into the waiting execution loop (plain, no BTN:: prefix)
       if (waitResolveRef.current) {
+        globalContextRef.current.push(text);
         waitResolveRef.current(text);
         waitResolveRef.current = null;
       }
@@ -1018,12 +1212,12 @@ export default function RunModal({
           <div className="flex items-center gap-2 border-t border-gray-200 bg-gray-50 px-4 py-2">
             <div
               className={`h-2 w-2 rounded-full ${runState === "running"
-                  ? "bg-blue-500 animate-pulse"
-                  : runState === "waiting"
-                    ? "bg-amber-500 animate-pulse"
-                    : runState === "done"
-                      ? "bg-green-500"
-                      : "bg-gray-400"
+                ? "bg-blue-500 animate-pulse"
+                : runState === "waiting"
+                  ? "bg-amber-500 animate-pulse"
+                  : runState === "done"
+                    ? "bg-green-500"
+                    : "bg-gray-400"
                 }`}
             />
             <span className="text-xs text-gray-500">
@@ -1203,8 +1397,8 @@ export default function RunModal({
                         {msg.text.trim() && (
                           <div
                             className={`max-w-[80%] px-4 py-2.5 text-sm leading-relaxed ${theme.borderRadius === "pill" ? "rounded-full"
-                                : theme.borderRadius === "sharp" ? "rounded-sm"
-                                  : msg.role === "user" ? "rounded-2xl rounded-br-sm" : "rounded-2xl rounded-bl-sm"
+                              : theme.borderRadius === "sharp" ? "rounded-sm"
+                                : msg.role === "user" ? "rounded-2xl rounded-br-sm" : "rounded-2xl rounded-bl-sm"
                               }`}
                             style={msg.role === "user"
                               ? { background: theme.userBubbleBg, color: theme.userBubbleText }
@@ -1215,7 +1409,7 @@ export default function RunModal({
                           </div>
                         )}
                         {/* Canvas-flow routing buttons */}
-                        {msg.role === "bot" && msg.buttons && msg.buttons.length > 0 && !msg.buttons.every(btn => btn.id.startsWith('ec_')) && (
+                        {msg.role === "bot" && msg.buttons && msg.buttons.length > 0 && !msg.buttons.every(btn => btn.id.startsWith('ec_')) && !msg.isCarousel && (
                           <div className="flex flex-col gap-1.5 w-full max-w-[80%]">
                             {msg.buttons.map((btn) => {
                               const isChosen = msg.chosenButtonId === btn.id
@@ -1227,9 +1421,9 @@ export default function RunModal({
                                   disabled={isLocked || !isWaitingOnThis}
                                   onClick={() => handleButtonClick(btn.label, btn.id, msg.id)}
                                   className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium text-left transition-all duration-150 ${isChosen ? "border-blue-500 bg-blue-500 text-white shadow-sm"
-                                      : isLocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
-                                        : isWaitingOnThis ? "border-blue-200 bg-white text-blue-700 hover:bg-blue-50 hover:border-blue-400 cursor-pointer"
-                                          : "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
+                                    : isLocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
+                                      : isWaitingOnThis ? "border-blue-200 bg-white text-blue-700 hover:bg-blue-50 hover:border-blue-400 cursor-pointer"
+                                        : "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
                                     }`}
                                 >
                                   <MousePointerClick className="h-3.5 w-3.5 shrink-0 opacity-70" />
@@ -1248,8 +1442,8 @@ export default function RunModal({
                                 disabled={runState !== "waiting"}
                                 onClick={() => handleQuickReply(reply)}
                                 className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all duration-150 ${runState === "waiting"
-                                    ? "border-blue-200 bg-white text-blue-600 hover:bg-blue-500 hover:text-white cursor-pointer"
-                                    : "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
+                                  ? "border-blue-200 bg-white text-blue-600 hover:bg-blue-500 hover:text-white cursor-pointer"
+                                  : "border-gray-200 bg-gray-50 text-gray-400 cursor-default"
                                   }`}
                               >
                                 {reply}
@@ -1260,36 +1454,43 @@ export default function RunModal({
                         {/* Product cards */}
                         {msg.role === "bot" && msg.productCards && msg.productCards.length > 0 && (
                           <div className="w-full mt-1 flex flex-col gap-3">
-                            <ProductCarousel products={msg.productCards} />
-                            <div dir="rtl" className="flex flex-col gap-3 rounded-xl bg-[#f8f9fa] border border-gray-100 p-3.5 text-sm text-gray-800 shadow-sm">
-                              <p className="font-medium text-gray-700">هاهي التفاصيل ديال كل {msg.productCards[0]?.category || "منتج"}:</p>
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-right text-[11px] md:text-xs">
-                                  <thead>
-                                    <tr className="border-b border-gray-200 text-gray-500">
-                                      <th className="py-2 px-1 font-medium whitespace-nowrap w-[35%]">المنتج</th>
-                                      <th className="py-2 px-1 font-medium text-center whitespace-nowrap">اللون</th>
-                                      <th className="py-2 px-1 font-medium text-center whitespace-nowrap">القماش</th>
-                                      <th className="py-2 px-1 font-medium text-center whitespace-nowrap">القصة</th>
-                                      <th className="py-2 px-1 font-medium text-center whitespace-nowrap">السعر</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {msg.productCards.map((p, idx) => (
-                                      <tr key={idx} className="border-b border-gray-100 last:border-0 text-gray-700">
-                                        <td className="py-2.5 px-1 align-top"><div className="flex gap-1.5 items-start"><span className="font-semibold text-gray-400">{idx + 1}</span><span className="line-clamp-3">{p.name}</span></div></td>
-                                        <td className="py-2.5 px-1 align-top text-center font-medium"><div className="flex items-center justify-center gap-1">{p.color || "-"}{p.color?.toLowerCase() === 'bordeaux' && <span className="text-red-500 text-[10px]">🔴</span>}{p.color?.toLowerCase() === 'beige' && <span className="text-amber-700 text-[10px]">🟤</span>}{p.color?.toLowerCase() === 'bleu' && <span className="text-blue-500 text-[10px]">🔵</span>}{p.color?.toLowerCase() === 'kaki' && <span className="text-green-500 text-[10px]">🟢</span>}</div></td>
-                                        <td className="py-2.5 px-1 align-top text-center text-gray-600">{p.fabric || "-"}</td>
-                                        <td className="py-2.5 px-1 align-top text-center text-gray-600">{p.category || "Boxy Fit"}</td>
-                                        <td className="py-2.5 px-1 align-top text-center font-semibold whitespace-nowrap font-sans text-gray-900">{p.price}</td>
+                            <ProductCarousel
+                              products={msg.productCards}
+                              isLocked={!!msg.chosenButtonId}
+                              isWaitingOnThis={runState === "waiting" && waitingMsgIdRef.current === msg.id}
+                              onButtonClick={(label, id) => handleButtonClick(label, id, msg.id)}
+                            />
+                            {!msg.isCarousel && (
+                              <div dir="rtl" className="flex flex-col gap-3 rounded-xl bg-[#f8f9fa] border border-gray-100 p-3.5 text-sm text-gray-800 shadow-sm">
+                                <p className="font-medium text-gray-700">هاهي التفاصيل ديال كل {msg.productCards[0]?.category || "منتج"}:</p>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-right text-[11px] md:text-xs">
+                                    <thead>
+                                      <tr className="border-b border-gray-200 text-gray-500">
+                                        <th className="py-2 px-1 font-medium whitespace-nowrap w-[35%]">المنتج</th>
+                                        <th className="py-2 px-1 font-medium text-center whitespace-nowrap">اللون</th>
+                                        <th className="py-2 px-1 font-medium text-center whitespace-nowrap">القماش</th>
+                                        <th className="py-2 px-1 font-medium text-center whitespace-nowrap">القصة</th>
+                                        <th className="py-2 px-1 font-medium text-center whitespace-nowrap">السعر</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                                    </thead>
+                                    <tbody>
+                                      {msg.productCards.map((p, idx) => (
+                                        <tr key={idx} className="border-b border-gray-100 last:border-0 text-gray-700">
+                                          <td className="py-2.5 px-1 align-top"><div className="flex gap-1.5 items-start"><span className="font-semibold text-gray-400">{idx + 1}</span><span className="line-clamp-3">{p.name}</span></div></td>
+                                          <td className="py-2.5 px-1 align-top text-center font-medium"><div className="flex items-center justify-center gap-1">{p.color || "-"}{p.color?.toLowerCase() === 'bordeaux' && <span className="text-red-500 text-[10px]">🔴</span>}{p.color?.toLowerCase() === 'beige' && <span className="text-amber-700 text-[10px]">🟤</span>}{p.color?.toLowerCase() === 'bleu' && <span className="text-blue-500 text-[10px]">🔵</span>}{p.color?.toLowerCase() === 'kaki' && <span className="text-green-500 text-[10px]">🟢</span>}</div></td>
+                                          <td className="py-2.5 px-1 align-top text-center text-gray-600">{p.fabric || "-"}</td>
+                                          <td className="py-2.5 px-1 align-top text-center text-gray-600">{p.category || "Boxy Fit"}</td>
+                                          <td className="py-2.5 px-1 align-top text-center font-semibold whitespace-nowrap font-sans text-gray-900">{p.price}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <p className="text-xs font-medium text-gray-500">S, M, L كلها متوفرة بمقاسات 👌</p>
+                                {msg.closingText && <p className="text-sm font-medium text-gray-800 mt-1">{msg.closingText}</p>}
                               </div>
-                              <p className="text-xs font-medium text-gray-500">S, M, L كلها متوفرة بمقاسات 👌</p>
-                              {msg.closingText && <p className="text-sm font-medium text-gray-800 mt-1">{msg.closingText}</p>}
-                            </div>
+                            )}
                           </div>
                         )}
                       </div>

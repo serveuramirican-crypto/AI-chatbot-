@@ -390,21 +390,105 @@ function CapabilityConfigBox({
   toolDef,
   toolConfig,
   agent,
+  apiNodes,
   onToolConfigChange,
   onReset,
   onPatch,
 }: {
-  toolId: SystemToolId
-  toolDef: ToolDef
+  toolId: string
+  toolDef: ToolDef | undefined
   toolConfig: ToolConfig | undefined
   agent: AgentConfig
-  onToolConfigChange: (id: SystemToolId, config: Record<string, unknown>) => void
+  apiNodes: ApiNodeData[]
+  onToolConfigChange: (id: string, config: Record<string, unknown>) => void
   onReset: () => void
   onPatch: (p: Partial<AgentConfig>) => void
 }) {
   const config = toolConfig?.config ?? {}
-  const triggerText =
-    (config.triggerOverride as string | undefined) ?? toolDef.trigger
+
+  // ── API Tool ────────────────────────────────────────────────────────
+  if (toolConfig?.type === 'api') {
+    const handleApiNodeSelect = (apiNodeId: string) => {
+      const node = apiNodes.find(n => n.id === apiNodeId)
+      if (node) {
+        onToolConfigChange(toolId, {
+          ...config,
+          apiNodeId,
+          apiConfig: {
+            url: node.url,
+            method: node.method,
+            headers: node.headers,
+            params: node.params,
+            bodyVariables: node.body,
+            timeout: node.timeout,
+          }
+        })
+      }
+    }
+
+    return (
+      <div className="flex flex-col gap-3 h-full">
+        <div>
+          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            API tool
+          </label>
+          <div className="relative">
+            <select
+              value={(config.apiNodeId as string) || ''}
+              onChange={(e) => handleApiNodeSelect(e.target.value)}
+              className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2 pl-8 text-sm text-gray-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-300/20"
+            >
+              <option value="" disabled>Select an API to map</option>
+              {apiNodes.map(node => (
+                <option key={node.id} value={node.id}>{node.name || 'Untitled API'}</option>
+              ))}
+            </select>
+            <Globe className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <ChevronDown className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              Trigger
+            </span>
+          </div>
+          <textarea
+            rows={3}
+            value={(config.triggerOverride as string) || ''}
+            onChange={(e) => onToolConfigChange(toolId, { ...config, triggerOverride: e.target.value })}
+            placeholder="Describe when this tool should be used..."
+            className="w-full resize-none text-xs leading-relaxed text-gray-600 outline-none"
+          />
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <label className="flex items-center justify-between px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
+            <span className="text-xs font-medium text-gray-700">Capture response</span>
+            <input
+              type="checkbox"
+              checked={(config.captureResponse as boolean) || false}
+              onChange={(e) => onToolConfigChange(toolId, { ...config, captureResponse: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+            />
+          </label>
+          <label className="flex items-center justify-between px-3 py-3 hover:bg-gray-50 cursor-pointer">
+            <span className="text-xs font-medium text-gray-700">Async execution</span>
+            <input
+              type="checkbox"
+              checked={(config.asyncExecution as boolean) || false}
+              onChange={(e) => onToolConfigChange(toolId, { ...config, asyncExecution: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+            />
+          </label>
+        </div>
+      </div>
+    )
+  }
+
+  // Fallback triggerText definition for standard tools
+  const triggerText = (config.triggerOverride as string | undefined) ?? (toolDef?.trigger || '')
   const rawMessages = (config.messages as any[]) ?? []
   const messages: { role: 'user' | 'agent', content: string }[] = rawMessages.map(
     (m, i) => (typeof m === 'string' ? { role: i % 2 === 0 ? 'user' : 'agent', content: m } : m)
@@ -897,11 +981,13 @@ function ExitConditionRow({
   )
 }
 
+import { ApiNodeData } from './ApiNode'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AgentStudio — full-screen modal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function AgentStudio() {
+export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[] }) {
   const activeAgentId = useActiveAgentId()
   const agent = useAgent(activeAgentId)
   const allAgents = useAgentList()
@@ -914,7 +1000,7 @@ export default function AgentStudio() {
    * Which capability is currently selected/open in the config box.
    * null = none — shows the placeholder.
    */
-  const [selectedCapabilityId, setSelectedCapabilityId] = useState<SystemToolId | null>(null)
+  const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null)
 
   const patch = useCallback(
     (p: Partial<AgentConfig>) => { if (agent) updateAgent(agent.id, p) },
@@ -922,7 +1008,7 @@ export default function AgentStudio() {
   )
 
   // ── Tool helpers — ALL hooks must be declared before any early return ─────
-  const handleToolToggle = useCallback((toolId: SystemToolId, enabled: boolean) => {
+  const handleToolToggle = useCallback((toolId: string, enabled: boolean) => {
     if (!agent) return
     const hasTool = agent.tools.some((t) => t.id === toolId)
     const updatedTools = hasTool
@@ -931,7 +1017,7 @@ export default function AgentStudio() {
     updateAgent(agent.id, { tools: updatedTools })
   }, [agent, updateAgent])
 
-  const handleToolConfigChange = useCallback((toolId: SystemToolId, config: Record<string, unknown>) => {
+  const handleToolConfigChange = useCallback((toolId: string, config: Record<string, unknown>) => {
     if (!agent) return
     const hasTool = agent.tools.some((t) => t.id === toolId)
     const updatedTools = hasTool
@@ -940,23 +1026,30 @@ export default function AgentStudio() {
     updateAgent(agent.id, { tools: updatedTools })
   }, [agent, updateAgent])
 
-  const handleCapabilityClick = useCallback((toolId: SystemToolId) =>
+  const handleCapabilityClick = useCallback((toolId: string) =>
     setSelectedCapabilityId((prev) => (prev === toolId ? null : toolId))
     , [])
 
-  const handleResetTrigger = useCallback((toolId: SystemToolId) => {
+  const handleResetTrigger = useCallback((toolId: string) => {
     if (!agent) return
     const existing = agent.tools.find((t) => t.id === toolId)
     const hasTool = !!existing
+    const defaultTrigger = (DEFAULT_TRIGGER as Record<string, string>)[toolId] ?? 'Describe when this tool should be used...'
     const updatedTools = hasTool
       ? agent.tools.map((t) =>
           t.id === toolId
-            ? { ...t, config: { ...(existing?.config ?? {}), triggerOverride: DEFAULT_TRIGGER[toolId] } }
+            ? { ...t, config: { ...(existing?.config ?? {}), triggerOverride: defaultTrigger } }
             : t
         )
-      : [...agent.tools, { id: toolId, enabled: true, config: { triggerOverride: DEFAULT_TRIGGER[toolId] } }]
+      : [...agent.tools, { id: toolId, enabled: true, config: { triggerOverride: defaultTrigger } }]
     updateAgent(agent.id, { tools: updatedTools })
   }, [agent, updateAgent])
+
+  const handleRemoveIntegrationTool = useCallback((toolId: string) => {
+    if (!agent) return
+    if (selectedCapabilityId === toolId) setSelectedCapabilityId(null)
+    updateAgent(agent.id, { tools: agent.tools.filter(t => t.id !== toolId) })
+  }, [agent, updateAgent, selectedCapabilityId])
 
   const addExitCondition = useCallback(() => {
     if (!agent) return
@@ -998,10 +1091,13 @@ export default function AgentStudio() {
   const credential = agent.credentialId ? credentials[agent.credentialId] : null
   const availableAgents = allAgents.filter((a) => a.id !== agent.id)
 
-  const selectedToolDef = SYSTEM_TOOLS.find((t) => t.id === selectedCapabilityId)
   const selectedToolConfig = selectedCapabilityId
     ? agent.tools.find((t) => t.id === selectedCapabilityId)
     : undefined
+
+  const selectedToolDef = selectedToolConfig?.type === 'api'
+    ? { id: selectedCapabilityId as any, label: 'API Tool', icon: <Globe className="h-4 w-4" />, trigger: '' }
+    : SYSTEM_TOOLS.find((t) => t.id === selectedCapabilityId)
 
   const configBoxOpen = !!selectedCapabilityId
 
@@ -1165,6 +1261,7 @@ export default function AgentStudio() {
                   toolDef={selectedToolDef}
                   toolConfig={selectedToolConfig}
                   agent={agent}
+                  apiNodes={apiNodes}
                   onToolConfigChange={handleToolConfigChange}
                   onReset={() => handleResetTrigger(selectedCapabilityId)}
                   onPatch={patch}
@@ -1233,6 +1330,103 @@ export default function AgentStudio() {
                       onClick={(e) => {
                         e.stopPropagation()
                         handleToolToggle(toolDef.id, !enabled)
+                      }}
+                      className={`
+                        relative h-5 w-9 shrink-0 rounded-full transition-colors
+                        ${enabled
+                          ? isActive ? 'bg-white/30' : 'bg-blue-500'
+                          : isActive ? 'bg-white/20' : 'bg-gray-200'}
+                      `}
+                    >
+                      <span
+                        className={`
+                          absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform
+                          ${enabled ? 'translate-x-4' : 'translate-x-0'}
+                        `}
+                      />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* ── Custom Tools ─────────────────────────────────────────────────── */}
+            <div className="px-4 pt-3 pb-2 flex items-center justify-between border-t border-gray-100">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-800">Tools</h2>
+                {!configBoxOpen && (
+                  <p className="mt-0.5 text-[11px] text-gray-400">
+                    Map custom actions and APIs
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  const id = `api_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`
+                  const updatedTools = [
+                    ...agent.tools,
+                    { id, type: 'api', enabled: true, config: { triggerOverride: 'Use this tool when...' } }
+                  ]
+                  patch({ tools: updatedTools })
+                  setSelectedCapabilityId(id)
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-md bg-gray-100 text-gray-500 transition hover:bg-gray-200 hover:text-gray-700 active:scale-95"
+                title="Add API Tool"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="flex-1 px-2 pb-3">
+              {agent.tools.filter(t => t.type === 'api').map((toolConfig) => {
+                const isActive = selectedCapabilityId === toolConfig.id
+                const enabled = toolConfig.enabled
+                const nodeLabel = (toolConfig.config?.apiNodeId as string) 
+                  ? apiNodes.find(n => n.id === toolConfig.config?.apiNodeId)?.name 
+                  : 'Untitled API'
+
+                return (
+                  <div
+                    key={toolConfig.id}
+                    onClick={() => handleCapabilityClick(toolConfig.id)}
+                    className={`
+                      group flex cursor-pointer select-none items-center gap-3 rounded-xl px-3 py-2.5
+                      transition-all duration-150 mb-1
+                      ${isActive
+                        ? 'bg-blue-500 shadow-sm'
+                        : 'hover:bg-gray-50'}
+                    `}
+                  >
+                    <Globe className={`h-4 w-4 shrink-0 ${isActive ? 'text-white/80' : 'text-gray-400'}`} />
+                    <span
+                      className={`flex-1 text-sm font-medium ${isActive
+                          ? 'text-white'
+                          : enabled
+                            ? 'text-gray-800'
+                            : 'text-gray-400'
+                        }`}
+                    >
+                      {nodeLabel || 'API Tool'}
+                    </span>
+
+                    {!isActive && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemoveIntegrationTool(toolConfig.id)
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 transition-all"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+
+                    <button
+                      role="switch"
+                      aria-checked={enabled}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToolToggle(toolConfig.id, !enabled)
                       }}
                       className={`
                         relative h-5 w-9 shrink-0 rounded-full transition-colors

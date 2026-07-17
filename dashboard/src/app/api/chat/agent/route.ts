@@ -22,6 +22,7 @@ interface RequestBody {
   agentId: string
   messages: ChatMessage[]
   sessionId?: string
+  userContext?: string
 }
 
 interface AgentRecord {
@@ -64,13 +65,13 @@ const COLOR_MAP: Record<string, string> = {
   purple: 'purple', violet: 'purple', بنفسجي: 'purple',
 }
 
-const SIZE_TOKENS = new Set(['xs','s','m','l','xl','xxl','2xl','3xl','xsmall','small','medium','large'])
+const SIZE_TOKENS = new Set(['xs', 's', 'm', 'l', 'xl', 'xxl', '2xl', '3xl', 'xsmall', 'small', 'medium', 'large'])
 
 // Noise words that are not product keywords
 const NOISE_WORDS = new Set([
-  'do','you','have','is','there','any','the','a','an','with','and','or','for',
-  'size','taille','couleur','color','colour', 'en','de','le','la','les','du',
-  'واش','عندكم','كاين','بغيت','نبغي','فين','كيفاش','بلاصة','هل','عندي',
+  'do', 'you', 'have', 'is', 'there', 'any', 'the', 'a', 'an', 'with', 'and', 'or', 'for',
+  'size', 'taille', 'couleur', 'color', 'colour', 'en', 'de', 'le', 'la', 'les', 'du',
+  'واش', 'عندكم', 'كاين', 'بغيت', 'نبغي', 'فين', 'كيفاش', 'بلاصة', 'هل', 'عندي',
 ])
 
 /**
@@ -119,8 +120,8 @@ async function queryProductsDb(
     }
 
     if (category) q = q.ilike('category', `%${category}%`)
-    if (col)      q = q.ilike('color', `%${col}%`)
-    if (sz)       q = q.ilike('size',  `%${sz}%`)
+    if (col) q = q.ilike('color', `%${col}%`)
+    if (sz) q = q.ilike('size', `%${sz}%`)
 
     return q.limit(8)
   }
@@ -167,11 +168,11 @@ async function queryProductsDb(
     let q = supabaseReadOnly
       .from('products')
       .select('name, price, description, image_url, link, size, color, category')
-      
+
     if (agentSourceIds && agentSourceIds.length > 0) {
       q = q.in('id', agentSourceIds)
     }
-    
+
     const { data: all } = await q.limit(8)
     if (all && all.length > 0) {
       console.log(`[queryProductsDb] global fallback hit: ${all.length} rows`)
@@ -243,9 +244,38 @@ function buildSystemPrompt(
   hasButtonsTool: boolean,
   hasProductDisplayTool: boolean,
   hasKnowledgeBaseTool: boolean,
-  hasResponseExampleTool: boolean
+  hasResponseExampleTool: boolean,
+  userContext: string = ''
 ): string {
-  let prompt = agentConfig.instructions || 'You are a helpful assistant.'
+  const defaultInstructions = `## Role & Identity
+You are Sophie, an expert Product Recommendation Specialist for our clothing store.
+
+## CRITICAL MEMORY & CONTEXT RULES (Read this first)
+You have access to the user's current selections here: {{user_context}}
+
+1. PRE-CHECK: Before generating any response, look strictly at {{user_context}}.
+
+2. LOGIC FLOW:
+   - IF {{user_context}} contains data (e.g., category, size, color):
+     - YOU MUST NOT greet the user (no "Hello", "Welcome", or "Hi").
+     - YOU MUST NOT ask for information already provided in {{user_context}}.
+     - IMMEDIATELY provide a precise product recommendation based on these preferences.
+     - BE DIRECT, concise, and sales-focused.
+     - Assume the user knows you already.
+
+   - IF {{user_context}} IS EMPTY (or contains 'No preferences selected'):
+     - Be warm and welcoming.
+     - Introduce yourself briefly as Sophie.
+     - Politely ask the user what they are looking for to start the flow.
+
+## Interaction Style
+- Keep answers short, natural, and helpful.
+- Never apologize for existing data.
+- Treat the conversation as a continuous professional flow.`;
+
+  let prompt = agentConfig.instructions || defaultInstructions;
+  prompt = prompt.replace(/\{\{user_context\}\}/g, userContext ? userContext : 'No selections yet');
+  
   prompt += `\n\nCRITICAL: NEVER output tool calls, function names, or raw database queries in your visible text response. You must use the designated tool calling API silently to fetch data before speaking.`
 
   if (hasKnowledgeBaseTool) {
@@ -271,7 +301,7 @@ If no product matches all criteria, apologize politely (e.g. "سمحليا، ه�
   if (hasProductDisplayTool) {
     prompt += `\n\n[RESPONSE STRUCTURE - Follow EXACTLY]\nYour response MUST follow this 3-part structure when showing products:\n\nPART 1 - Intro (1 line only): One friendly sentence in Arabic/French.\n\nPART 2 - Product Cards:\nUse the <product_display> XML tag. ALWAYS include ALL these fields per product:\n<product_display>[{"name":"...","price":"...","image_url":"...","description":"max 10 words","link":"...","color":"...","size":"...","category":"...","fabric":"..."}]</product_display>\nFIELD RULES:\n- color: the Couleur field from KB (e.g. BLACK, RED, BLUE)\n- size: the Size field from KB (e.g. S, M, L, XL)\n- category: the Category field from KB (e.g. chemise)\n- fabric: material from the Description field (e.g. Coton 100%, Polyester 58%)\n- image_url: exact URL from KB. If none: https://placehold.co/400x300?text=ProductName\n- description: SHORT max 10 words summary\n- CRITICAL: products must match KB results from THIS turn ONLY. Never copy from previous messages.\n- Do NOT use markdown code fences around the JSON.\n\nPART 3 - Closing + Buttons:\nOne short closing sentence then the <options> quick-reply buttons.`
   }
-  
+
   prompt += `\n\n[Reasoning & Analysis Process]
 CRITICAL: You MUST think step by step inside a <thinking> tag BEFORE writing your final response. This tag is HIDDEN from the user — it is for your internal reasoning only. Never show it.
 Inside the <thinking> tag:
@@ -371,7 +401,7 @@ async function callOpenRouter(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { agentId, messages, sessionId: incomingSessionId } = body as RequestBody
+    const { agentId, messages, sessionId: incomingSessionId, userContext } = body as RequestBody
 
     if (!agentId) {
       return NextResponse.json({ error: 'agentId is required' }, { status: 400 })
@@ -448,7 +478,7 @@ export async function POST(req: Request) {
 
     const agentSourceIds = (agentRecord.knowledge_base?.documents || []).map((d: any) => d.id)
 
-    const systemInstruction = buildSystemPrompt(agentRecord, hasProductsDbTool, hasButtonsTool, hasProductDisplayTool, hasKnowledgeBaseTool, hasResponseExampleTool)
+    const systemInstruction = buildSystemPrompt(agentRecord, hasProductsDbTool, hasButtonsTool, hasProductDisplayTool, hasKnowledgeBaseTool, hasResponseExampleTool, userContext)
 
     // Determine which API key and model to use.
     // Priority: DB api_key → OPENROUTER_API_KEY env var → hardcoded fallback
@@ -484,18 +514,60 @@ export async function POST(req: Request) {
     ]
 
     const toolsPayload: any[] = []
-    
+
     if (hasProductsDbTool) {
       toolsPayload.push({
         type: 'function',
         function: QUERY_PRODUCTS_DB_TOOL_SCHEMA
       })
     }
-    
+
     if (hasKnowledgeBaseTool) {
       toolsPayload.push({
         type: 'function',
         function: SEARCH_KNOWLEDGE_BASE_TOOL_SCHEMA
+      })
+    }
+
+    // ── Dynamic API Tools ───────────────────────────────────────────────────
+    const apiTools = enabledTools.filter((t: any) => t.type === 'api')
+    for (const apiTool of apiTools) {
+      const config = apiTool.config || {}
+      const apiConfig = config.apiConfig || {}
+      
+      const parameters: any = {
+        type: 'object',
+        properties: {},
+        required: [],
+      }
+
+      // Add body variables as properties
+      if (apiConfig.bodyVariables && Array.isArray(apiConfig.bodyVariables)) {
+        for (const v of apiConfig.bodyVariables) {
+          if (v.key) {
+            parameters.properties[v.key] = { type: 'string', description: `Value for ${v.key}` }
+            parameters.required.push(v.key)
+          }
+        }
+      }
+
+      // Add URL parameters as properties
+      if (apiConfig.params && Array.isArray(apiConfig.params)) {
+        for (const p of apiConfig.params) {
+          if (p.key) {
+            parameters.properties[p.key] = { type: 'string', description: `URL Parameter: ${p.key}` }
+            parameters.required.push(p.key)
+          }
+        }
+      }
+
+      toolsPayload.push({
+        type: 'function',
+        function: {
+          name: apiTool.id,
+          description: config.triggerOverride || `Execute API request`,
+          parameters
+        }
       })
     }
 
@@ -504,16 +576,16 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < maxSteps; i++) {
       const message = await callOpenRouter(apiKey, model, currentMessages, toolsPayload)
-      
+
       if (message.tool_calls && message.tool_calls.length > 0) {
         currentMessages.push(message)
-        
+
         for (const toolCall of message.tool_calls) {
           if (toolCall.function.name === 'query_products_db') {
             const args = JSON.parse(toolCall.function.arguments || '{}')
             const dbResult = await queryProductsDb(args.search_query || '', args.color, args.size, args.category, agentSourceIds)
             const formattedResult = formatProductsForLLM(dbResult)
-            
+
             currentMessages.push({
               role: 'tool',
               name: toolCall.function.name,
@@ -598,6 +670,105 @@ export async function POST(req: Request) {
               tool_call_id: toolCall.id,
               content: combinedResult
             })
+          } else {
+            const mappedApiTool = apiTools.find((t: any) => t.id === toolCall.function.name)
+            if (mappedApiTool) {
+              const toolArgs = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {}
+              const config = mappedApiTool.config || {}
+              const apiConfig = config.apiConfig || {}
+              
+              let finalUrl = apiConfig.url || ''
+              
+              // Replace URL variables {variable} with args or ''
+              const urlRegex = /\{([^}]+)\}/g
+              finalUrl = finalUrl.replace(urlRegex, (_, key) => {
+                return toolArgs[key] !== undefined ? encodeURIComponent(toolArgs[key]) : ''
+              })
+
+              // Build URL params
+              if (apiConfig.params && apiConfig.params.length > 0) {
+                const searchParams = new URLSearchParams()
+                for (const p of apiConfig.params) {
+                  if (p.key) {
+                    searchParams.append(p.key, toolArgs[p.key] !== undefined ? toolArgs[p.key] : p.value)
+                  }
+                }
+                const qs = searchParams.toString()
+                if (qs) {
+                  finalUrl += (finalUrl.includes('?') ? '&' : '?') + qs
+                }
+              }
+
+              // Build Headers
+              const headers: Record<string, string> = {}
+              if (apiConfig.headers) {
+                for (const h of apiConfig.headers) {
+                  if (h.key) headers[h.key] = h.value
+                }
+              }
+
+              // Build Body
+              let body: string | undefined = undefined
+              if (apiConfig.method !== 'GET' && apiConfig.method !== 'HEAD' && apiConfig.bodyVariables) {
+                const bodyObj: Record<string, any> = {}
+                for (const v of apiConfig.bodyVariables) {
+                  if (v.key) {
+                    bodyObj[v.key] = toolArgs[v.key] !== undefined ? toolArgs[v.key] : v.value
+                  }
+                }
+                if (Object.keys(bodyObj).length > 0) {
+                  body = JSON.stringify(bodyObj)
+                  headers['Content-Type'] = 'application/json'
+                }
+              }
+
+              try {
+                // If asyncExecution is true, we don't await the result to block the stream
+                // However, in this route context, we might just await it anyway or fire and forget
+                let resultText = ''
+                if (config.asyncExecution) {
+                  fetch(finalUrl, { method: apiConfig.method || 'GET', headers, body }).catch(e => console.error('Async API Error:', e))
+                  resultText = 'Action triggered asynchronously.'
+                } else {
+                  const controller = new AbortController()
+                  const timeoutId = setTimeout(() => controller.abort(), (apiConfig.timeout || 10) * 1000)
+                  
+                  const res = await fetch(finalUrl, {
+                    method: apiConfig.method || 'GET',
+                    headers,
+                    body,
+                    signal: controller.signal
+                  })
+                  clearTimeout(timeoutId)
+                  
+                  if (!res.ok) {
+                    throw new Error(`API returned ${res.status}: ${res.statusText}`)
+                  }
+                  
+                  if (config.captureResponse) {
+                    const data = await res.json()
+                    resultText = JSON.stringify(data)
+                  } else {
+                    resultText = 'Action completed successfully.'
+                  }
+                }
+                
+                currentMessages.push({
+                  role: 'tool',
+                  name: toolCall.function.name,
+                  tool_call_id: toolCall.id,
+                  content: resultText
+                })
+              } catch (e: any) {
+                console.error(`[Dynamic API] Error calling ${finalUrl}:`, e)
+                currentMessages.push({
+                  role: 'tool',
+                  name: toolCall.function.name,
+                  tool_call_id: toolCall.id,
+                  content: `API Error: ${e.message}`
+                })
+              }
+            }
           }
         }
       } else {

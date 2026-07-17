@@ -47,6 +47,9 @@ export function useWorkflowExecutor(projectId: string | null) {
   const waitResolveRef = useRef<((val: string) => void) | null>(null);
   const workflowMemoryRef = useRef<Record<string, string>>({});
   const hasStartedRef = useRef(false);
+  // Accumulated context: stores ALL user selections from message nodes in order
+  // e.g. [{label: "category", value: "Chemise"}, {label: "size", value: "S"}, ...]
+  const accumulatedContextRef = useRef<{ label: string; value: string }[]>([]);
 
   // Load workflow & agents
   useEffect(() => {
@@ -121,6 +124,7 @@ export function useWorkflowExecutor(projectId: string | null) {
     setRunState("running");
     sessionIdRef.current = null;
     workflowMemoryRef.current = {};
+    accumulatedContextRef.current = [];
 
     await sleep(400);
 
@@ -159,6 +163,26 @@ export function useWorkflowExecutor(projectId: string | null) {
           delete workflowMemoryRef.current[node.id];
         }
 
+        // Build a full context string from ALL accumulated user selections
+        const buildUserContext = () => {
+          const ctx = accumulatedContextRef.current;
+          if (ctx.length === 0) return '';
+          return ctx.map(c => `${c.label}: ${c.value}`).join(', ');
+        };
+
+        // Build the combined message to send to the agent (all selections + current input)
+        const buildCombinedMessage = (lastInput: string) => {
+          const ctx = accumulatedContextRef.current;
+          if (ctx.length === 0) return lastInput;
+          const parts = ctx.map(c => `${c.label}: ${c.value}`);
+          // Avoid duplicating the last input if it's already in context
+          const lastInContext = ctx.at(-1);
+          if (!lastInContext || lastInContext.value.toLowerCase() !== lastInput.toLowerCase()) {
+            parts.push(lastInput);
+          }
+          return parts.join(', ');
+        };
+
         if (capturedInput) {
           if (ag.exitConditions && ag.exitConditions.length > 0) {
             const matchedId = await matchExitCondition(capturedInput, ag.exitConditions);
@@ -177,6 +201,8 @@ export function useWorkflowExecutor(projectId: string | null) {
           setLoading(true);
           const inputToSend = capturedInput;
           capturedInput = "";
+          const combinedMessage = buildCombinedMessage(inputToSend);
+          const userContext = buildUserContext();
 
           try {
             const agentRes: Response = await fetch("/api/chat/agent", {
@@ -184,8 +210,9 @@ export function useWorkflowExecutor(projectId: string | null) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 agentId,
-                messages: [{ role: "user", content: inputToSend }],
+                messages: [{ role: "user", content: combinedMessage }],
                 sessionId: sessionIdRef.current ?? undefined,
+                userContext,
               }),
             });
 
@@ -249,13 +276,19 @@ export function useWorkflowExecutor(projectId: string | null) {
 
           setLoading(true);
           try {
+            // Always build combined context for agent calls inside the agent loop too
+            const agentLoopContext = accumulatedContextRef.current.map(c => `${c.label}: ${c.value}`).join(', ');
+            const agentLoopCombinedMsg = agentLoopContext
+              ? `${agentLoopContext}, latest: ${userLabel}`
+              : userLabel;
             const agentRes = await fetch("/api/chat/agent", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 agentId,
-                messages: [{ role: "user", content: userLabel }],
+                messages: [{ role: "user", content: agentLoopCombinedMsg }],
                 sessionId: sessionIdRef.current ?? undefined,
+                userContext: agentLoopContext,
               }),
             });
 
@@ -319,24 +352,39 @@ export function useWorkflowExecutor(projectId: string | null) {
             ? rawPayload.slice(5).split("::")
             : [rawPayload, undefined];
 
+          // Determine a human-readable label for this node's question
+          // Use the node's message text to label what this answer corresponds to
+          const nodeQuestion = node.variants?.[0]?.trim() || node.label || "selection";
+
           if (!isButtonPayload) {
             capturedInput = userLabel;
+            // Accumulate this text input into context
+            accumulatedContextRef.current = [
+              ...accumulatedContextRef.current,
+              { label: nodeQuestion.slice(0, 40), value: userLabel },
+            ];
             if (node.saveEntireReply) {
               const outEdge = edges.find((e) => e.from === node.id && !e.sourceHandleId);
               if (outEdge) {
                 const targetNode = nodes.find((n) => n.id === outEdge.to);
                 if (targetNode && targetNode.type === "agent") {
+                  // Store for agent — the agent will also see accumulatedContext
                   workflowMemoryRef.current[targetNode.id] = userLabel;
                 }
               }
             }
           } else if (isButtonPayload && clickedButtonId) {
             const clickedBtn = node.buttons?.find((b: any) => b.id === clickedButtonId);
+            const label = clickedBtn?.label ?? userLabel;
+            // Accumulate this button click into context
+            accumulatedContextRef.current = [
+              ...accumulatedContextRef.current,
+              { label: nodeQuestion.slice(0, 40), value: label },
+            ];
             const btnEdge = edges.find((e) => e.from === node.id && e.sourceHandleId === clickedButtonId);
             if (btnEdge) {
               const targetNode = nodes.find((n) => n.id === btnEdge.to);
               if (targetNode && targetNode.type === "agent") {
-                const label = clickedBtn?.label ?? userLabel;
                 workflowMemoryRef.current[targetNode.id] = label;
               }
             }

@@ -102,11 +102,41 @@ export type IntegrationToolId =
   | 'hubspot'
 
 export interface ToolConfig {
-  id: SystemToolId | IntegrationToolId
+  /** The unique ID of this tool instance in the agent's tool array. Usually the SystemToolId for system tools, or a generated ID for integration tools */
+  id: SystemToolId | IntegrationToolId | string
   enabled: boolean
-  /** Integration tools need connection-specific config. */
+  /** 
+   * If this is an integration tool (e.g. added dynamically from the "+" menu), this indicates the tool type. 
+   * For system tools, this is usually undefined or matches the `id`.
+   */
+  type?: SystemToolId | IntegrationToolId
+  /** Config can be anything, but specifically typed for Integration tools */
   config?: Record<string, unknown>
 }
+
+export interface ApiToolConfig extends ToolConfig {
+  type: 'api'
+  config: {
+    /** The ID of the API node this tool is mapped to */
+    apiNodeId: string
+    /** Trigger description for LLM system prompt */
+    triggerOverride: string
+    /** Whether to parse and capture the response */
+    captureResponse: boolean
+    /** Whether to execute asynchronously (fire and forget) */
+    asyncExecution: boolean
+    /** The actual API configuration copied from the canvas node */
+    apiConfig: {
+      url: string
+      method: string
+      headers: { key: string; value: string }[]
+      params: { key: string; value: string }[]
+      bodyVariables: { key: string; value: string }[]
+      timeout: number
+    }
+  }
+}
+
 
 /**
  * EndToolConfig — special-cased because the End tool has mandatory safety
