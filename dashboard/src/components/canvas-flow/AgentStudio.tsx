@@ -1365,7 +1365,7 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
                   const id = `api_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`
                   const updatedTools = [
                     ...agent.tools,
-                    { id, type: 'api', enabled: true, config: { triggerOverride: 'Use this tool when...' } }
+                    { id, type: 'api' as any, enabled: true, config: { triggerOverride: 'Use this tool when...' } }
                   ]
                   patch({ tools: updatedTools })
                   setSelectedCapabilityId(id)
