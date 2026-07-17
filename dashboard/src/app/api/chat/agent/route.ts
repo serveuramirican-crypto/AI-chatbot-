@@ -681,8 +681,8 @@ export async function POST(req: Request) {
               
               // Replace URL variables {variable} with args or ''
               const urlRegex = /\{([^}]+)\}/g
-              finalUrl = finalUrl.replace(urlRegex, (_, key) => {
-                return toolArgs[key] !== undefined ? encodeURIComponent(toolArgs[key]) : ''
+              finalUrl = finalUrl.replace(urlRegex, (_: string, key: string) => {
+                return toolArgs[key] !== undefined ? encodeURIComponent(String(toolArgs[key])) : ''
               })
 
               // Build URL params
