@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { loadWorkflow, WorkflowRow } from '@/lib/workflowStore';
+import { loadWorkflow } from '@/lib/workflowStore';
 import { AgentConfig } from '@/types/agent';
 import {
   parseProductDisplay,
@@ -14,14 +14,13 @@ import { rowToAgentConfig } from '@/lib/agentStore';
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ChatMessage {
   id: string;
-  role: "bot" | "user";
+  role: "bot" | "user" | "admin";
   text: string;
   buttons?: { id: string; label: string }[];
   chosenButtonId?: string;
   quickReplies?: string[];
   productCards?: ProductItem[];
   closingText?: string;
-  // Fallback for legacy format
   product?: any;
   suggestedButtons?: string[];
 }
@@ -43,13 +42,137 @@ export function useWorkflowExecutor(projectId: string | null) {
   const [nodes, setNodes] = useState<any[]>([]);
   const [edges, setEdges] = useState<any[]>([]);
 
+  const [isTakenOver, setIsTakenOver] = useState(false);
+  const isTakenOverRef = useRef(false);
+
+  // Persistent Session ID
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+
   const waitResolveRef = useRef<((val: string) => void) | null>(null);
   const workflowMemoryRef = useRef<Record<string, string>>({});
   const hasStartedRef = useRef(false);
-  // Accumulated context: stores ALL user selections from message nodes in order
-  // e.g. [{label: "category", value: "Chemise"}, {label: "size", value: "S"}, ...]
   const accumulatedContextRef = useRef<{ label: string; value: string }[]>([]);
+
+  // Initialize Session ID
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      let storedId = localStorage.getItem('ai_chatbot_session_id');
+      if (!storedId) {
+        storedId = crypto.randomUUID();
+        localStorage.setItem('ai_chatbot_session_id', storedId);
+      }
+      setSessionId(storedId);
+      sessionIdRef.current = storedId;
+    }
+  }, []);
+
+  // Fetch or Create Session in Supabase, and sync previous messages
+  useEffect(() => {
+    const initSession = async () => {
+      const sId = sessionIdRef.current;
+      if (!sId) return;
+
+      // 1. Check if session exists
+      const { data: session, error: sessError } = await supabase
+        .from('chat_sessions')
+        .select('*')
+        .eq('id', sId)
+        .single();
+
+      let takenOver = false;
+
+      if (sessError || !session) {
+        // Create new session
+        const shortId = sId.slice(0, 5);
+        const { data: newSession } = await supabase
+          .from('chat_sessions')
+          .insert({
+            id: sId,
+            user_name: `Visitor-${shortId}`,
+            is_taken_over: false,
+          })
+          .select()
+          .single();
+        
+        if (newSession) {
+          takenOver = newSession.is_taken_over;
+        }
+      } else {
+        takenOver = session.is_taken_over;
+        setIsTakenOver(takenOver);
+        isTakenOverRef.current = takenOver;
+
+        // Sync old messages
+        const { data: dbMessages } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('session_id', sId)
+          .order('created_at', { ascending: true });
+
+        if (dbMessages && dbMessages.length > 0) {
+          const formatted: ChatMessage[] = dbMessages.map(m => ({
+            id: m.id,
+            role: m.role as any,
+            text: m.content,
+            productCards: m.products,
+          }));
+          setMessages(formatted);
+          // Prevent standard start if messages already exist
+          hasStartedRef.current = true;
+          setRunState("waiting");
+        }
+      }
+
+      // 2. Realtime Subscriptions for this session
+      const channel = supabase.channel(`session_${sId}`)
+        // Listen for new messages (e.g. from Admin dashboard)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'chat_messages',
+          filter: `session_id=eq.${sId}`
+        }, (payload) => {
+          const newMsg = payload.new;
+          setMessages(prev => {
+            // Avoid duplicate appending if we sent it
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, {
+              id: newMsg.id,
+              role: newMsg.role as any,
+              text: newMsg.content,
+              productCards: newMsg.products,
+            }];
+          });
+
+          // If a new message is inserted by user while waiting, and AI is NOT paused, resolve the workflow
+          if (newMsg.role === 'user' && !isTakenOverRef.current && waitResolveRef.current) {
+            waitResolveRef.current(newMsg.content);
+            waitResolveRef.current = null;
+          }
+        })
+        // Listen for takeover updates
+        .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'chat_sessions',
+          filter: `id=eq.${sId}`
+        }, (payload) => {
+          const updatedSess = payload.new;
+          setIsTakenOver(updatedSess.is_taken_over);
+          isTakenOverRef.current = updatedSess.is_taken_over;
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    if (sessionId) {
+      initSession();
+    }
+  }, [sessionId]);
 
   // Load workflow & agents
   useEffect(() => {
@@ -58,8 +181,6 @@ export function useWorkflowExecutor(projectId: string | null) {
       
       try {
         let row = await loadWorkflow(`${projectId}_published`);
-        
-        // Fallback to draft if published doesn't exist
         if (!row) {
           row = await loadWorkflow(projectId);
         }
@@ -71,7 +192,6 @@ export function useWorkflowExecutor(projectId: string | null) {
           newEdges = row.edges || [];
         }
 
-        // Fetch agents
         const { data: agentsData } = await supabase.from('agents').select('*');
         if (agentsData) {
           const map: Record<string, AgentConfig> = {};
@@ -81,7 +201,6 @@ export function useWorkflowExecutor(projectId: string | null) {
           setAgentsMap(map);
         }
         
-        // Update nodes and edges only AFTER agents are ready
         setNodes(newNodes);
         setEdges(newEdges);
       } catch (err) {
@@ -91,9 +210,28 @@ export function useWorkflowExecutor(projectId: string | null) {
     loadData();
   }, [projectId]);
 
+  // Save bot messages to Supabase helper
+  const saveBotMessageToSupabase = async (text: string, products?: any[]) => {
+    const sId = sessionIdRef.current;
+    if (!sId) return;
+
+    await supabase.from('chat_messages').insert({
+      session_id: sId,
+      role: 'agent',
+      content: text,
+      products: products || null,
+    });
+  };
+
   const addChat = useCallback((msg: Omit<ChatMessage, "id">) => {
     const id = makeId();
     setMessages((prev) => [...prev, { ...msg, id }]);
+    
+    // Save bot responses to database
+    if (msg.role === 'bot') {
+      saveBotMessageToSupabase(msg.text, msg.productCards);
+    }
+    
     return id;
   }, []);
 
@@ -122,7 +260,6 @@ export function useWorkflowExecutor(projectId: string | null) {
   const runWorkflow = useCallback(async () => {
     setMessages([]);
     setRunState("running");
-    sessionIdRef.current = null;
     workflowMemoryRef.current = {};
     accumulatedContextRef.current = [];
 
@@ -145,6 +282,13 @@ export function useWorkflowExecutor(projectId: string | null) {
     while (true) {
       await sleep(500);
 
+      // Check if Taken Over before executing bot logic
+      if (isTakenOverRef.current) {
+        setRunState("waiting");
+        await sleep(1000);
+        continue;
+      }
+
       // Agent Node
       if (node.type === "agent") {
         const agentId = node.agentId;
@@ -163,19 +307,16 @@ export function useWorkflowExecutor(projectId: string | null) {
           delete workflowMemoryRef.current[node.id];
         }
 
-        // Build a full context string from ALL accumulated user selections
         const buildUserContext = () => {
           const ctx = accumulatedContextRef.current;
           if (ctx.length === 0) return '';
           return ctx.map(c => `${c.label}: ${c.value}`).join(', ');
         };
 
-        // Build the combined message to send to the agent (all selections + current input)
         const buildCombinedMessage = (lastInput: string) => {
           const ctx = accumulatedContextRef.current;
           if (ctx.length === 0) return lastInput;
           const parts = ctx.map(c => `${c.label}: ${c.value}`);
-          // Avoid duplicating the last input if it's already in context
           const lastInContext = ctx.at(-1);
           if (!lastInContext || lastInContext.value.toLowerCase() !== lastInput.toLowerCase()) {
             parts.push(lastInput);
@@ -211,16 +352,12 @@ export function useWorkflowExecutor(projectId: string | null) {
               body: JSON.stringify({
                 agentId,
                 messages: [{ role: "user", content: combinedMessage }],
-                sessionId: sessionIdRef.current ?? undefined,
                 userContext,
               }),
             });
 
             if (agentRes.ok) {
               const data = await agentRes.json();
-              if (data.sessionId && !sessionIdRef.current) {
-                sessionIdRef.current = data.sessionId;
-              }
               const rawReply = data.content || "(empty response)";
               const strippedReply = stripThinking(rawReply);
               const { text: introText, closingText: rawClosing, productCards } = parseProductDisplay(strippedReply);
@@ -276,7 +413,6 @@ export function useWorkflowExecutor(projectId: string | null) {
 
           setLoading(true);
           try {
-            // Always build combined context for agent calls inside the agent loop too
             const agentLoopContext = accumulatedContextRef.current.map(c => `${c.label}: ${c.value}`).join(', ');
             const agentLoopCombinedMsg = agentLoopContext
               ? `${agentLoopContext}, latest: ${userLabel}`
@@ -287,16 +423,12 @@ export function useWorkflowExecutor(projectId: string | null) {
               body: JSON.stringify({
                 agentId,
                 messages: [{ role: "user", content: agentLoopCombinedMsg }],
-                sessionId: sessionIdRef.current ?? undefined,
                 userContext: agentLoopContext,
               }),
             });
 
             if (agentRes.ok) {
               const data = await agentRes.json();
-              if (data.sessionId && !sessionIdRef.current) {
-                sessionIdRef.current = data.sessionId;
-              }
               const rawReply = data.content || "(empty response)";
               const strippedReply = stripThinking(rawReply);
               const { text: introText, closingText: rawClosing, productCards } = parseProductDisplay(strippedReply);
@@ -352,13 +484,10 @@ export function useWorkflowExecutor(projectId: string | null) {
             ? rawPayload.slice(5).split("::")
             : [rawPayload, undefined];
 
-          // Determine a human-readable label for this node's question
-          // Use the node's message text to label what this answer corresponds to
           const nodeQuestion = node.variants?.[0]?.trim() || node.label || "selection";
 
           if (!isButtonPayload) {
             capturedInput = userLabel;
-            // Accumulate this text input into context
             accumulatedContextRef.current = [
               ...accumulatedContextRef.current,
               { label: nodeQuestion.slice(0, 40), value: userLabel },
@@ -368,7 +497,6 @@ export function useWorkflowExecutor(projectId: string | null) {
               if (outEdge) {
                 const targetNode = nodes.find((n) => n.id === outEdge.to);
                 if (targetNode && targetNode.type === "agent") {
-                  // Store for agent — the agent will also see accumulatedContext
                   workflowMemoryRef.current[targetNode.id] = userLabel;
                 }
               }
@@ -376,7 +504,6 @@ export function useWorkflowExecutor(projectId: string | null) {
           } else if (isButtonPayload && clickedButtonId) {
             const clickedBtn = node.buttons?.find((b: any) => b.id === clickedButtonId);
             const label = clickedBtn?.label ?? userLabel;
-            // Accumulate this button click into context
             accumulatedContextRef.current = [
               ...accumulatedContextRef.current,
               { label: nodeQuestion.slice(0, 40), value: label },
@@ -403,7 +530,6 @@ export function useWorkflowExecutor(projectId: string | null) {
         }
       }
 
-      // Default transition if no wait needed
       const { node: nextNode, deadEnd } = findNextNode(node.id, undefined);
       if (deadEnd || !nextNode) break;
       node = nextNode;
@@ -413,84 +539,79 @@ export function useWorkflowExecutor(projectId: string | null) {
   }, [nodes, edges, agentsMap, addChat, findStartNode, findNextNode]);
 
   useEffect(() => {
-    if (nodes.length > 0 && !hasStartedRef.current) {
+    if (nodes.length > 0 && !hasStartedRef.current && sessionId) {
       hasStartedRef.current = true;
       runWorkflow();
     }
-  }, [nodes, runWorkflow]);
+  }, [nodes, runWorkflow, sessionId]);
 
   // Handle user sending text
-  const handleSend = useCallback((text: string) => {
+  const handleSend = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    setMessages((prev) => [...prev, { id: makeId(), role: "user", text }]);
 
-    if (waitResolveRef.current) {
+    const sId = sessionIdRef.current;
+    if (!sId) return;
+
+    // 1. Optimistically append message to local UI
+    const userMsgId = makeId();
+    setMessages((prev) => [...prev, { id: userMsgId, role: "user", text }]);
+
+    // 2. Insert into Supabase
+    await supabase.from('chat_messages').insert({
+      id: userMsgId,
+      session_id: sId,
+      role: 'user',
+      content: text,
+    });
+
+    // Update last_interaction in session
+    await supabase.from('chat_sessions').update({
+      last_interaction: new Date().toISOString()
+    }).eq('id', sId);
+
+    // 3. Trigger workflow resolve if AI is active and NOT taken over
+    if (!isTakenOverRef.current && waitResolveRef.current) {
       waitResolveRef.current(text);
       waitResolveRef.current = null;
     }
   }, []);
 
   // Handle canvas-flow button clicks
-  const handleButtonClick = useCallback((label: string, btnId: string, msgId: string) => {
-    if (runState !== "waiting") return;
+  const handleButtonClick = useCallback(async (label: string, btnId: string, msgId: string) => {
+    const sId = sessionIdRef.current;
+    if (!sId) return;
 
     setMessages((prev) =>
       prev.map((m) => (m.id === msgId ? { ...m, chosenButtonId: btnId } : m)),
     );
-    setMessages((prev) => [...prev, { id: makeId(), role: "user", text: label }]);
 
-    if (waitResolveRef.current) {
+    const userMsgId = makeId();
+    setMessages((prev) => [...prev, { id: userMsgId, role: "user", text: label }]);
+
+    // Save to Supabase
+    await supabase.from('chat_messages').insert({
+      id: userMsgId,
+      session_id: sId,
+      role: 'user',
+      content: label,
+    });
+
+    await supabase.from('chat_sessions').update({
+      last_interaction: new Date().toISOString()
+    }).eq('id', sId);
+
+    if (!isTakenOverRef.current && waitResolveRef.current) {
       waitResolveRef.current(`BTN::${label}::${btnId}`);
       waitResolveRef.current = null;
     }
   }, [runState]);
 
-  // Handle legacy / direct API fallback (if no workflow was loaded)
-  const [legacyLoading, setLegacyLoading] = useState(false);
-  const legacySessionIdRef = useRef<string | null>(null);
-
-  const handleLegacySend = useCallback(async (text: string) => {
-    if (!text.trim() || legacyLoading) return;
-    const userMessage = text;
-    setMessages((prev) => [...prev, { id: makeId(), role: 'user', text: userMessage }]);
-    setLegacyLoading(true);
-
-    if (!legacySessionIdRef.current) {
-      legacySessionIdRef.current = crypto.randomUUID();
-    }
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, sessionId: legacySessionIdRef.current })
-      });
-      const data = await res.json();
-
-      if (data.response) {
-        setMessages((prev) => [...prev, {
-          id: makeId(),
-          role: 'bot',
-          text: data.response,
-          product: data.raw_json?.matched_product || data.raw_json?.matched_products,
-          suggestedButtons: data.raw_json?.suggested_buttons
-        }]);
-      } else if (data.error) {
-        setMessages((prev) => [...prev, { id: makeId(), role: 'bot', text: `Error: ${data.error}` }]);
-      }
-    } catch (err) {
-      setMessages((prev) => [...prev, { id: makeId(), role: 'bot', text: "Failed to connect to the server." }]);
-    } finally {
-      setLegacyLoading(false);
-    }
-  }, [legacyLoading]);
-
   return {
     messages,
-    loading: loading || legacyLoading,
+    loading,
     runState,
     isWorkflowActive: nodes.length > 0,
-    handleSend: nodes.length > 0 ? handleSend : handleLegacySend,
+    handleSend,
     handleButtonClick,
   };
 }
