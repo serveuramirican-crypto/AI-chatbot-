@@ -32,16 +32,16 @@ export function ChatSidebar({ conversations, selectedId, onSelect }: ChatSidebar
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm text-zinc-100 truncate">{conv.user.name}</span>
-                  {conv.isTakenOver && (
+                  <span className="font-medium text-sm text-zinc-100 truncate">{conv.user_name}</span>
+                  {conv.is_taken_over && (
                     <span className="w-2 h-2 rounded-full bg-orange-500" title="Taken over by human" />
                   )}
                 </div>
                 <div className="flex items-center gap-1 text-xs text-zinc-500 mt-1">
                   <Clock className="w-3 h-3" />
-                  <span>{conv.lastInteraction}</span>
+                  <span>{new Date(conv.last_interaction).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   <span className="mx-1">•</span>
-                  <span>{conv.messages.length} Interactions</span>
+                  <span>{conv.chat_messages?.length || 0} Interactions</span>
                 </div>
               </div>
             </div>

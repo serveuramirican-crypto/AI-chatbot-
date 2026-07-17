@@ -1,15 +1,75 @@
 "use client"
 
-import { useState } from 'react';
-import { mockConversations } from '@/components/chats/mockData';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 import { ChatSidebar } from '@/components/chats/ChatSidebar';
 import { ChatArea } from '@/components/chats/ChatArea';
 import { ChatInput } from '@/components/chats/ChatInput';
-import { Conversation, ChatMessage } from '@/components/chats/types';
+import { ChatSession } from '@/components/chats/types';
 
 export default function ChatsPage() {
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
-  const [selectedId, setSelectedId] = useState<string | null>(mockConversations[0]?.id || null);
+  const [conversations, setConversations] = useState<ChatSession[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // 1. Fetch initial data
+    const fetchConversations = async () => {
+      const { data, error } = await supabase
+        .from('chat_sessions')
+        .select(`
+          *,
+          chat_messages(*)
+        `)
+        .order('last_interaction', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching conversations:', error);
+      } else if (data) {
+        setConversations(data as ChatSession[]);
+        if (data.length > 0 && !selectedId) {
+          setSelectedId(data[0].id);
+        }
+      }
+    };
+
+    fetchConversations();
+
+    // 2. Setup Realtime Subscriptions
+    const channel = supabase.channel('chats_realtime')
+      // Listen to new messages
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+        const newMessage = payload.new;
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === newMessage.session_id) {
+            return {
+              ...conv,
+              chat_messages: [...(conv.chat_messages || []), newMessage as any],
+              last_interaction: newMessage.created_at,
+            };
+          }
+          return conv;
+        }));
+      })
+      // Listen to session updates (e.g. takeover status)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_sessions' }, (payload) => {
+        const updatedSession = payload.new;
+        setConversations(prev => prev.map(conv => {
+          if (conv.id === updatedSession.id) {
+            return {
+              ...conv,
+              ...updatedSession,
+              chat_messages: conv.chat_messages // preserve messages since they are not in the payload
+            };
+          }
+          return conv;
+        }));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedId]); // Intentionally keeping dependencies light, we handle selectedId initialization only
 
   const selectedConversation = conversations.find(c => c.id === selectedId);
 
@@ -17,37 +77,45 @@ export default function ChatsPage() {
     setSelectedId(id);
   };
 
-  const handleTakeOverToggle = () => {
-    if (!selectedId) return;
+  const handleTakeOverToggle = async () => {
+    if (!selectedConversation) return;
     
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === selectedId) {
-        return { ...conv, isTakenOver: !conv.isTakenOver };
-      }
-      return conv;
-    }));
+    // Optimistic UI update
+    const newStatus = !selectedConversation.is_taken_over;
+    setConversations(prev => prev.map(conv => 
+      conv.id === selectedId ? { ...conv, is_taken_over: newStatus } : conv
+    ));
+
+    // Update Supabase
+    const { error } = await supabase
+      .from('chat_sessions')
+      .update({ is_taken_over: newStatus })
+      .eq('id', selectedId);
+
+    if (error) {
+      console.error('Error updating takeover status:', error);
+      // Revert optimistic update on error
+      setConversations(prev => prev.map(conv => 
+        conv.id === selectedId ? { ...conv, is_taken_over: !newStatus } : conv
+      ));
+    }
   };
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = async (content: string) => {
     if (!selectedId) return;
 
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      role: 'admin',
-      content,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
+    // Send to Supabase (Realtime subscription will automatically update the UI)
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
+        session_id: selectedId,
+        role: 'admin',
+        content,
+      });
 
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === selectedId) {
-        return {
-          ...conv,
-          messages: [...conv.messages, newMessage],
-          lastInteraction: newMessage.timestamp,
-        };
-      }
-      return conv;
-    }));
+    if (error) {
+      console.error('Error sending message:', error);
+    }
   };
 
   return (
@@ -66,12 +134,12 @@ export default function ChatsPage() {
             <div className="h-16 border-b border-zinc-800 bg-[#0a0a0b] flex items-center px-6 shrink-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-500 flex items-center justify-center font-bold">
-                  {selectedConversation.user.name.charAt(0).toUpperCase()}
+                  {selectedConversation.user_name.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="font-semibold text-white">{selectedConversation.user.name}</h2>
+                  <h2 className="font-semibold text-white">{selectedConversation.user_name}</h2>
                   <p className="text-xs text-zinc-400">
-                    {selectedConversation.isTakenOver ? (
+                    {selectedConversation.is_taken_over ? (
                       <span className="text-orange-500">Admin Control</span>
                     ) : (
                       <span className="text-blue-400">AI Control</span>
@@ -86,14 +154,14 @@ export default function ChatsPage() {
 
             {/* Input Area */}
             <ChatInput 
-              isTakenOver={selectedConversation.isTakenOver}
+              isTakenOver={selectedConversation.is_taken_over}
               onTakeOverToggle={handleTakeOverToggle}
               onSendMessage={handleSendMessage}
             />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-zinc-500 bg-[#000000]">
-            Select a conversation to start
+            {conversations.length === 0 ? 'No conversations found.' : 'Select a conversation to start'}
           </div>
         )}
       </div>

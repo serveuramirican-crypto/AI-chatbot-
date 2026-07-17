@@ -7,10 +7,15 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ conversation }: ChatAreaProps) {
+  // Sort messages by created_at safely
+  const messages = [...(conversation.chat_messages || [])].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-[#000000] text-zinc-300">
       <div className="max-w-4xl mx-auto space-y-6">
-        {conversation.messages.map((msg) => (
+        {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
       </div>
@@ -48,7 +53,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
         {/* Timestamp */}
         <div className={`text-[10px] text-zinc-500 ${isUser ? 'text-right' : 'text-left'} px-1`}>
-          {message.timestamp} {isAdmin && '• Admin'}
+          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} {isAdmin && '• Admin'}
         </div>
 
         {/* Product Recommendations */}

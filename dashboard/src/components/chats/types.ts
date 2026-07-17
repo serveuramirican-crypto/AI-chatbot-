@@ -7,25 +7,27 @@ export interface ProductRecommendation {
   price: number;
 }
 
+// Matches the `chat_messages` table in Supabase
 export interface ChatMessage {
   id: string;
+  session_id: string;
   role: MessageRole;
   content: string;
-  timestamp: string;
-  products?: ProductRecommendation[];
+  products?: ProductRecommendation[] | null;
+  created_at: string;
 }
 
-export interface ChatUser {
+// Matches the `chat_sessions` table in Supabase
+export interface ChatSession {
   id: string;
-  name: string;
-  avatar?: string;
-  isOnline?: boolean;
+  user_name: string;
+  is_taken_over: boolean;
+  last_interaction: string;
+  created_at: string;
+  
+  // This array will be populated by our Supabase join query: `*, chat_messages(*)`
+  chat_messages?: ChatMessage[]; 
 }
 
-export interface Conversation {
-  id: string;
-  user: ChatUser;
-  messages: ChatMessage[];
-  lastInteraction: string;
-  isTakenOver: boolean; // True if the admin (human) is controlling the chat
-}
+// Backward compatibility alias for the UI components if needed
+export type Conversation = ChatSession;
