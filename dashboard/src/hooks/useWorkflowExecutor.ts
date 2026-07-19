@@ -38,7 +38,7 @@ export function useWorkflowExecutor(projectId: string | null) {
   const [runState, setRunState] = useState<RunState>("idle");
   const [loading, setLoading] = useState(false);
   const [agentsMap, setAgentsMap] = useState<Record<string, AgentConfig>>({});
-  
+
   const [nodes, setNodes] = useState<any[]>([]);
   const [edges, setEdges] = useState<any[]>([]);
 
@@ -94,7 +94,7 @@ export function useWorkflowExecutor(projectId: string | null) {
           })
           .select()
           .single();
-        
+
         if (newSession) {
           takenOver = newSession.is_taken_over;
         }
@@ -127,9 +127,9 @@ export function useWorkflowExecutor(projectId: string | null) {
       // 2. Realtime Subscriptions for this session
       const channel = supabase.channel(`session_${sId}`)
         // Listen for new messages (e.g. from Admin dashboard)
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
           table: 'chat_messages',
           filter: `session_id=eq.${sId}`
         }, (payload) => {
@@ -152,9 +152,9 @@ export function useWorkflowExecutor(projectId: string | null) {
           }
         })
         // Listen for takeover updates
-        .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
           table: 'chat_sessions',
           filter: `id=eq.${sId}`
         }, (payload) => {
@@ -177,12 +177,27 @@ export function useWorkflowExecutor(projectId: string | null) {
   // Load workflow & agents
   useEffect(() => {
     async function loadData() {
-      if (!projectId || projectId === 'default') return;
-      
+      let targetProjectId = projectId;
+
+      if (!targetProjectId || targetProjectId === 'default') {
+        const { data: wfs } = await supabase
+          .from('workflows')
+          .select('id')
+          .not('id', 'like', '%\\_published%')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        
+        if (wfs && wfs.length > 0) {
+          targetProjectId = wfs[0].id;
+        } else {
+          return;
+        }
+      }
+
       try {
-        let row = await loadWorkflow(`${projectId}_published`);
+        let row = await loadWorkflow(`${targetProjectId}_published`);
         if (!row) {
-          row = await loadWorkflow(projectId);
+          row = await loadWorkflow(targetProjectId);
         }
 
         let newNodes: any[] = [];
@@ -200,7 +215,7 @@ export function useWorkflowExecutor(projectId: string | null) {
           }
           setAgentsMap(map);
         }
-        
+
         setNodes(newNodes);
         setEdges(newEdges);
       } catch (err) {
@@ -226,12 +241,12 @@ export function useWorkflowExecutor(projectId: string | null) {
   const addChat = useCallback((msg: Omit<ChatMessage, "id">) => {
     const id = makeId();
     setMessages((prev) => [...prev, { ...msg, id }]);
-    
+
     // Save bot responses to database
     if (msg.role === 'bot') {
       saveBotMessageToSupabase(msg.text, msg.productCards);
     }
-    
+
     return id;
   }, []);
 
@@ -365,7 +380,7 @@ export function useWorkflowExecutor(projectId: string | null) {
               const afterDetails = textToProcess.replace(/<details_table>[\s\S]*?<\/details_table>/g, "").trim();
               const { text: finalClosingText, quickReplies } = parseQuickReplies(afterDetails);
               const finalIntroText = rawClosing ? introText : finalClosingText;
-              
+
               addChat({
                 role: "bot",
                 text: finalIntroText,
