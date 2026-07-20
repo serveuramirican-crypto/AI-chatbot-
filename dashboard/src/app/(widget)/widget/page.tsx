@@ -98,8 +98,8 @@ function WidgetContent() {
   const [open, setOpen] = useState(false)
 
   const [inputValue, setInputValue] = useState("")
-  const [widgetTab, setWidgetTab] = useState<"accueil" | "messages" | "aide">("accueil")
-  const [messagesView, setMessagesView] = useState<"list" | "chat">("list")
+  const [widgetTab, setWidgetTab] = useState<"accueil" | "messages" | "aide">("messages")
+  const [messagesView, setMessagesView] = useState<"list" | "chat">("chat")
 
   const { messages, loading, runState, isWorkflowActive, handleSend: executorHandleSend, handleButtonClick } = useWorkflowExecutor(projectId)
 
@@ -339,18 +339,20 @@ function WidgetContent() {
                             <MessageSquare className="w-12 h-12 text-gray-300 mb-4" />
                             <p style={{ fontSize: 14, color: "#888" }}>Aucun message pour l&apos;instant.<br />Écrivez-nous, on répond vite !</p>
 
-                            {/* Suggested Buttons */}
-                            <div className="flex flex-wrap gap-2 mt-6 justify-center">
-                              {initialButtons.map((btnText, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => handleSend(btnText)}
-                                  className="bg-blue-50 text-blue-500 hover:bg-blue-100 px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors border border-blue-100"
-                                >
-                                  {btnText}
-                                </button>
-                              ))}
-                            </div>
+                            {/* Suggested Buttons — only show if workflow is NOT active */}
+                            {!isWorkflowActive && (
+                              <div className="flex flex-wrap gap-2 mt-6 justify-center">
+                                {initialButtons.map((btnText, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => handleSend(btnText)}
+                                    className="bg-blue-50 text-blue-500 hover:bg-blue-100 px-3 py-1.5 rounded-full text-[13px] font-medium transition-colors border border-blue-100"
+                                  >
+                                    {btnText}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         {messages.map((msg, idx) => (
@@ -508,7 +510,7 @@ function WidgetContent() {
           <button
             className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-105 transition-transform pointer-events-auto"
             style={{ backgroundColor: settings.color }}
-            onClick={() => setOpen(true)}
+            onClick={() => { setOpen(true); setWidgetTab("messages"); setMessagesView("chat"); }}
           >
             <MessageSquare className="w-6 h-6" />
           </button>

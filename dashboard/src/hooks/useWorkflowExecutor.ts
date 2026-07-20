@@ -54,75 +54,33 @@ export function useWorkflowExecutor(projectId: string | null) {
   const hasStartedRef = useRef(false);
   const accumulatedContextRef = useRef<{ label: string; value: string }[]>([]);
 
-  // Initialize Session ID
+  // Initialize Session ID — always create a fresh session so the canvas-flow
+  // workflow always runs from the Start node, matching the Run modal behaviour.
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      let storedId = localStorage.getItem('ai_chatbot_session_id');
-      if (!storedId) {
-        storedId = crypto.randomUUID();
-        localStorage.setItem('ai_chatbot_session_id', storedId);
-      }
-      setSessionId(storedId);
-      sessionIdRef.current = storedId;
+      const freshId = crypto.randomUUID();
+      setSessionId(freshId);
+      sessionIdRef.current = freshId;
     }
   }, []);
 
-  // Fetch or Create Session in Supabase, and sync previous messages
+  // Create Session in Supabase (always fresh — no old-message preloading)
   useEffect(() => {
     const initSession = async () => {
       const sId = sessionIdRef.current;
       if (!sId) return;
 
-      // 1. Check if session exists
-      const { data: session, error: sessError } = await supabase
+      // Always create a new session row — fresh start every time
+      const shortId = sId.slice(0, 5);
+      await supabase
         .from('chat_sessions')
-        .select('*')
-        .eq('id', sId)
+        .insert({
+          id: sId,
+          user_name: `Visitor-${shortId}`,
+          is_taken_over: false,
+        })
+        .select()
         .single();
-
-      let takenOver = false;
-
-      if (sessError || !session) {
-        // Create new session
-        const shortId = sId.slice(0, 5);
-        const { data: newSession } = await supabase
-          .from('chat_sessions')
-          .insert({
-            id: sId,
-            user_name: `Visitor-${shortId}`,
-            is_taken_over: false,
-          })
-          .select()
-          .single();
-
-        if (newSession) {
-          takenOver = newSession.is_taken_over;
-        }
-      } else {
-        takenOver = session.is_taken_over;
-        setIsTakenOver(takenOver);
-        isTakenOverRef.current = takenOver;
-
-        // Sync old messages
-        const { data: dbMessages } = await supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('session_id', sId)
-          .order('created_at', { ascending: true });
-
-        if (dbMessages && dbMessages.length > 0) {
-          const formatted: ChatMessage[] = dbMessages.map(m => ({
-            id: m.id,
-            role: m.role as any,
-            text: m.content,
-            productCards: m.products,
-          }));
-          setMessages(formatted);
-          // Prevent standard start if messages already exist
-          hasStartedRef.current = true;
-          setRunState("waiting");
-        }
-      }
 
       // 2. Realtime Subscriptions for this session
       const channel = supabase.channel(`session_${sId}`)
@@ -197,7 +155,7 @@ export function useWorkflowExecutor(projectId: string | null) {
       try {
         let row = await loadWorkflow(`${targetProjectId}_published`);
         if (!row) {
-          row = await loadWorkflow(targetProjectId);
+          row = await loadWorkflow(targetProjectId as string);
         }
 
         let newNodes: any[] = [];
