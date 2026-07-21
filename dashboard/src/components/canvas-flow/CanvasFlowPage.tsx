@@ -1368,7 +1368,7 @@ function CanvasFlowPageInner() {
                   setTimeout(() => setPublishSuccess(false), 2000);
                 }
               }}
-              className="flex items-center gap-1.5 bg-green-500 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-green-600 disabled:opacity-75"
+              className="flex items-center gap-1.5 bg-red-500 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-red-600 disabled:opacity-75"
             >
               {isPublishing ? (
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -1381,7 +1381,7 @@ function CanvasFlowPageInner() {
               )}
               {publishSuccess ? "Published!" : "Publish"}
             </button>
-            <button className="flex items-center border-l border-green-400 bg-green-500 px-2 py-1.5 text-white transition hover:bg-green-600">
+            <button className="flex items-center border-l border-red-400 bg-red-500 px-2 py-1.5 text-white transition hover:bg-red-600">
               <ChevronDown className="h-4 w-4" />
             </button>
           </div>
@@ -1622,7 +1622,7 @@ function CanvasFlowPageInner() {
                     }
                   }}
                   disabled={isPublishing || isPublished === true}
-                  className="flex items-center gap-1.5 rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1.5 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isPublishing ? (
                     <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
