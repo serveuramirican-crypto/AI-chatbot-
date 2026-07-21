@@ -41,6 +41,7 @@ import {
   type WorkflowMeta,
   type WorkflowRow,
   listWorkflows,
+  loadWorkflow,
   createWorkflow,
   deleteWorkflow,
   renameWorkflow,
@@ -150,6 +151,8 @@ function CanvasFlowPageInner() {
 
   const [isPublishing, setIsPublishing] = useState(false)
   const [publishSuccess, setPublishSuccess] = useState(false)
+  // Track whether the currently active workflow has a published snapshot
+  const [isPublished, setIsPublished] = useState<boolean | null>(null)
 
   // ── Bootstrap: load workflow list on mount ─────────────────────────────────
   useEffect(() => {
@@ -167,6 +170,15 @@ function CanvasFlowPageInner() {
     }
     bootstrap()
   }, [])
+
+  // ── Check if active workflow has been published ──────────────────────────────
+  useEffect(() => {
+    if (!activeWorkflowId) { setIsPublished(null); return; }
+    setIsPublished(null) // reset to "loading" state
+    loadWorkflow(`${activeWorkflowId}_published`).then(row => {
+      setIsPublished(!!row)
+    }).catch(() => setIsPublished(false))
+  }, [activeWorkflowId, publishSuccess])
 
   // ── Persistence hook: auto-save + load on workflowId change ───────────────
   useWorkflowPersistence({
@@ -1527,50 +1539,107 @@ function CanvasFlowPageInner() {
       <AgentStudio apiNodes={nodes.filter(n => n.type === 'api').map(n => ({ id: n.id, ...(n as any).data })) as ApiNodeData[]} />
 
       {/* ── Widget Script Modal ─────────────────────────────────────────────────── */}
-      {showWidgetScriptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-[500px] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-800">Widget Script</h2>
-              <button onClick={() => setShowWidgetScriptModal(false)} className="text-gray-400 hover:text-gray-600 transition">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 flex flex-col gap-4">
-              <p className="text-sm text-gray-600">
-                Copiez ce code et collez-le dans la balise <code>&lt;head&gt;</code> ou juste avant la fin de la balise <code>&lt;body&gt;</code> de votre site web pour ajouter le widget de chat.
-              </p>
-              <div className="relative">
-                <pre className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs text-gray-700 font-mono overflow-x-auto whitespace-pre-wrap">
-                  {`<script src="\${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/widget-loader.js"></script>
-<script>
-  window.initAIChatbot({
-    host: "\${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}",
-    projectId: "${activeWorkflowId || 'default'}"
-  });
-</script>`}
-                </pre>
+      {showWidgetScriptModal && (() => {
+        const host = typeof window !== 'undefined' ? window.location.origin : 'https://ai-chatbot-ixph.vercel.app';
+        const wfId = activeWorkflowId || 'default';
+        const scriptCode = `<script src="${host}/widget-loader.js"></script>\n<script>\n  window.addEventListener('load', function() {\n    if (window.initAIChatbot) {\n      window.initAIChatbot({\n        host: "${host}",\n        projectId: "${wfId}"\n      });\n    }\n  });\n</script>`;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-[540px] rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <h2 className="text-lg font-semibold text-gray-800">Widget Script</h2>
+                <button onClick={() => setShowWidgetScriptModal(false)} className="text-gray-400 hover:text-gray-600 transition">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-6 flex flex-col gap-4">
+
+                {/* ── Publish status banner ── */}
+                {isPublished === null && (
+                  <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                    <svg className="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+                    Vérification du statut de publication…
+                  </div>
+                )}
+                {isPublished === false && (
+                  <div className="flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+                    <span className="mt-0.5 text-lg">⚠️</span>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Ce workflow n&apos;est pas encore publié !</p>
+                      <p className="text-xs text-amber-700 mt-1">Le widget sur votre site exécutera une <strong>version ancienne ou brouillon</strong> du flow. Cliquez sur <strong>Publish Now</strong> ci-dessous, puis copiez ce script.</p>
+                    </div>
+                  </div>
+                )}
+                {isPublished === true && (
+                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
+                    <span className="text-base">✅</span>
+                    <span><strong>Publié !</strong> Votre widget exécutera la dernière version publiée de ce flow.</span>
+                  </div>
+                )}
+
+                {/* ── Instructions ── */}
+                <div className="text-sm text-gray-600">
+                  <p className="font-medium text-gray-800 mb-2">Comment intégrer sur votre site :</p>
+                  <ol className="list-decimal ml-4 space-y-1 text-gray-600">
+                    <li>Cliquez sur <strong>Publish Now</strong> pour sauvegarder le flow actuel.</li>
+                    <li>Copiez le script ci-dessous et collez-le juste avant <code className="bg-gray-100 px-1 rounded text-xs">&lt;/body&gt;</code> de votre site.</li>
+                    <li>À chaque modification, répétez l&apos;étape 1 — inutile de rechanger le script.</li>
+                  </ol>
+                </div>
+
+                {/* ── Script code ── */}
+                <div className="relative">
+                  <pre className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs text-gray-700 font-mono overflow-x-auto whitespace-pre-wrap">{scriptCode}</pre>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(scriptCode)
+                      alert('Script copié dans le presse-papiers !')
+                    }}
+                    className="absolute top-3 right-3 rounded-md bg-white border border-gray-200 p-1.5 shadow-sm hover:bg-gray-50 text-gray-500"
+                    title="Copier"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                  </button>
+                </div>
+
+                {/* ── Workflow ID info ── */}
+                <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3">
+                  <p className="text-xs text-blue-700"><span className="font-semibold">Workflow ID :</span> <code className="font-mono">{wfId}</code></p>
+                  <p className="text-xs text-blue-600 mt-1">Votre site peut aussi utiliser <code className="font-mono text-xs">projectId: &quot;default&quot;</code> — il chargera automatiquement le dernier workflow publié.</p>
+                </div>
+
+              </div>
+              <div className="bg-gray-50 px-6 py-4 flex items-center justify-between border-t border-gray-100">
                 <button
-                  onClick={() => {
-                    const host = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-                    navigator.clipboard.writeText(`<script src="${host}/widget-loader.js"></script>\n<script>\n  window.initAIChatbot({\n    host: "${host}",\n    projectId: "${activeWorkflowId || 'default'}"\n  });\n</script>`)
-                    alert("Script copié dans le presse-papiers !")
+                  onClick={async () => {
+                    if (!activeWorkflowId || isPublishing) return;
+                    setIsPublishing(true);
+                    const success = await publishWorkflow(activeWorkflowId);
+                    setIsPublishing(false);
+                    if (success) {
+                      setPublishSuccess(true);
+                      setTimeout(() => setPublishSuccess(false), 2000);
+                    }
                   }}
-                  className="absolute top-3 right-3 rounded-md bg-white border border-gray-200 p-1.5 shadow-sm hover:bg-gray-50 text-gray-500"
-                  title="Copier"
+                  disabled={isPublishing || isPublished === true}
+                  className="flex items-center gap-1.5 rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                  {isPublishing ? (
+                    <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 2l6 6-6 6M2 8h12" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  )}
+                  {isPublishing ? 'Publication…' : isPublished === true ? '✅ Publié' : 'Publish Now'}
+                </button>
+                <button onClick={() => setShowWidgetScriptModal(false)} className="rounded-lg bg-indigo-500 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-600 transition">
+                  Fermer
                 </button>
               </div>
             </div>
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t border-gray-100">
-              <button onClick={() => setShowWidgetScriptModal(false)} className="rounded-lg bg-indigo-500 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-600 transition">
-                Fermer
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
     </div>
 
   )
