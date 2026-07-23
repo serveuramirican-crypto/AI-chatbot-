@@ -115,14 +115,11 @@ export function useWorkflowExecutor(projectId: string | null) {
           table: 'chat_messages', filter: `session_id=eq.${sId}`
         }, (payload) => {
           const newMsg = payload.new;
+          if (newMsg.role !== 'admin') return; // Ignore locally created agent/user messages
           setMessages(prev => {
             if (prev.some(m => m.id === newMsg.id)) return prev;
             return [...prev, { id: newMsg.id, role: newMsg.role as any, text: newMsg.content, productCards: newMsg.products }];
           });
-          if (newMsg.role === 'user' && !isTakenOverRef.current && waitResolveRef.current) {
-            waitResolveRef.current(newMsg.content);
-            waitResolveRef.current = null;
-          }
         })
         .on('postgres_changes', {
           event: 'UPDATE', schema: 'public',
@@ -226,18 +223,18 @@ export function useWorkflowExecutor(projectId: string | null) {
   }, [projectId]);
 
   // ── Save bot messages to Supabase ──────────────────────────────────────────
-  const saveBotMessage = async (text: string, products?: any[]) => {
+  const saveBotMessage = async (id: string, text: string, products?: any[]) => {
     const sId = dbSessionIdRef.current;
     if (!sId) return;
     await supabase.from('chat_messages').insert({
-      session_id: sId, role: 'agent', content: text, products: products || null,
+      id, session_id: sId, role: 'agent', content: text, products: products || null,
     });
   };
 
   const addChat = useCallback((msg: Omit<ChatMessage, "id">) => {
-    const id = makeId();
+    const id = crypto.randomUUID();
     setMessages(prev => [...prev, { ...msg, id }]);
-    if (msg.role === 'bot') saveBotMessage(msg.text, msg.productCards);
+    if (msg.role === 'bot') saveBotMessage(id, msg.text, msg.productCards);
     return id;
   }, []);
 

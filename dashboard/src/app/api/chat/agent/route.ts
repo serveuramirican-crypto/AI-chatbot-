@@ -780,11 +780,7 @@ export async function POST(req: Request) {
     }
 
     // ── Save assistant response to DB ──────────────────────────────────────
-    if (sessionId && finalResponseContent) {
-      await supabaseServer
-        .from('chat_messages')
-        .insert({ session_id: sessionId, role: 'assistant', content: finalResponseContent })
-    }
+    // (Handled by the client after parsing)
 
     return NextResponse.json({
       role: 'assistant',

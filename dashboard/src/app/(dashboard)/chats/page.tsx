@@ -125,7 +125,7 @@ export default function ChatsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedId]); // Intentionally keeping dependencies light, we handle selectedId initialization only
+  }, []); // Intentionally keeping dependencies light, we handle selectedId initialization only
 
   const selectedConversation = conversations.find(c => c.id === selectedId);
 
