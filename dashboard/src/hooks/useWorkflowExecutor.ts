@@ -96,7 +96,12 @@ export function useWorkflowExecutor(projectId: string | null) {
       const shortId = sId.slice(0, 5);
       const { error: sessError } = await supabase
         .from('chat_sessions')
-        .upsert({ id: sId, user_name: `Visitor-${shortId}`, is_taken_over: false }, { onConflict: 'id' });
+        .upsert({
+          id: sId,
+          user_name: `Visitor-${shortId}`,
+          is_taken_over: false,
+          last_interaction: new Date().toISOString()
+        }, { onConflict: 'id' });
 
       if (sessError) {
         console.error('[useWorkflowExecutor] Failed to initialize chat_session in Supabase:', sessError);
