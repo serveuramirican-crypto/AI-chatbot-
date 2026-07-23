@@ -190,10 +190,10 @@ export default function ChatsPage() {
             <div className="h-16 border-b border-zinc-800 bg-[#0a0a0b] flex items-center px-6 shrink-0 z-10">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-600/20 text-blue-500 flex items-center justify-center font-bold">
-                  {selectedConversation.user_name.charAt(0).toUpperCase()}
+                  {(selectedConversation.user_name || 'Visitor').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="font-semibold text-white">{selectedConversation.user_name}</h2>
+                  <h2 className="font-semibold text-white">{selectedConversation.user_name || 'Visitor'}</h2>
                   <p className="text-xs text-zinc-400">
                     {selectedConversation.is_taken_over ? (
                       <span className="text-orange-500">Admin Control</span>
