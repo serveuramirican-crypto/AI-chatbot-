@@ -446,12 +446,7 @@ export async function POST(req: Request) {
     }
 
     // ── Save incoming user message to DB ──────────────────────────────────────
-    const lastUserMessage = messages.filter(m => m.role === 'user').at(-1)
-    if (sessionId && lastUserMessage) {
-      await supabaseServer
-        .from('chat_messages')
-        .insert({ session_id: sessionId, role: 'user', content: lastUserMessage.content ?? '' })
-    }
+    // (Handled by the client hook when handleSend/handleButtonClick/handleQuickReply executes)
 
     // Fetch the agent from Supabase using the reliable server client
     const { data: agent, error: fetchError } = await supabaseServer

@@ -223,18 +223,27 @@ export function useWorkflowExecutor(projectId: string | null) {
   }, [projectId]);
 
   // ── Save bot messages to Supabase ──────────────────────────────────────────
-  const saveBotMessage = async (id: string, text: string, products?: any[]) => {
+  const saveBotMessage = async (id: string, text: string, products?: any[], quickReplies?: string[], buttons?: { id: string; label: string }[]) => {
     const sId = dbSessionIdRef.current;
     if (!sId) return;
+
+    let contentToSave = text;
+    if (quickReplies && quickReplies.length > 0) {
+      contentToSave += `\n\n<options>${JSON.stringify(quickReplies)}</options>`;
+    } else if (buttons && buttons.length > 0) {
+      const btnTags = buttons.map(b => `[BUTTON]${b.label}[/BUTTON]`).join(' ');
+      contentToSave += `\n\n${btnTags}`;
+    }
+
     await supabase.from('chat_messages').insert({
-      id, session_id: sId, role: 'agent', content: text, products: products || null,
+      id, session_id: sId, role: 'agent', content: contentToSave, products: products || null,
     });
   };
 
   const addChat = useCallback((msg: Omit<ChatMessage, "id">) => {
     const id = crypto.randomUUID();
     setMessages(prev => [...prev, { ...msg, id }]);
-    if (msg.role === 'bot') saveBotMessage(id, msg.text, msg.productCards);
+    if (msg.role === 'bot') saveBotMessage(id, msg.text, msg.productCards, msg.quickReplies, msg.buttons);
     return id;
   }, []);
 
