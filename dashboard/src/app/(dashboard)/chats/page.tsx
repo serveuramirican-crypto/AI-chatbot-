@@ -14,7 +14,7 @@ export default function ChatsPage() {
   useEffect(() => {
     // 1. Fetch initial data
     const fetchConversations = async () => {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('chat_sessions')
         .select(`
           *,
@@ -22,13 +22,32 @@ export default function ChatsPage() {
         `)
         .order('last_interaction', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching conversations:', error);
-      } else if (data) {
-        setConversations(data as ChatSession[]);
-        if (data.length > 0 && !selectedId) {
-          setSelectedId(data[0].id);
+      // Fallback: if PostgREST relational query returns error or null, run explicit decoupled queries
+      if (error || !data) {
+        console.warn('[ChatsPage] Relational select failed/null, using fallback explicit queries:', error?.message);
+        const { data: sessData } = await supabase
+          .from('chat_sessions')
+          .select('*')
+          .order('last_interaction', { ascending: false });
+
+        if (sessData) {
+          const { data: msgData } = await supabase
+            .from('chat_messages')
+            .select('*')
+            .order('created_at', { ascending: true });
+
+          data = sessData.map(s => ({
+            ...s,
+            chat_messages: (msgData || []).filter((m: any) => m.session_id === s.id)
+          })) as any;
         }
+      }
+
+      if (data && data.length > 0) {
+        setConversations(data as ChatSession[]);
+        setSelectedId(prev => prev || data[0].id);
+      } else if (data) {
+        setConversations([]);
       }
     };
 

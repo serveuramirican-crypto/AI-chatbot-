@@ -94,11 +94,13 @@ export function useWorkflowExecutor(projectId: string | null) {
       if (!sId) return;
 
       const shortId = sId.slice(0, 5);
-      await supabase
+      const { error: sessError } = await supabase
         .from('chat_sessions')
-        .insert({ id: sId, user_name: `Visitor-${shortId}`, is_taken_over: false })
-        .select()
-        .single();
+        .upsert({ id: sId, user_name: `Visitor-${shortId}`, is_taken_over: false }, { onConflict: 'id' });
+
+      if (sessError) {
+        console.error('[useWorkflowExecutor] Failed to initialize chat_session in Supabase:', sessError);
+      }
 
       // Realtime: admin messages + takeover flag
       const channel = supabase.channel(`session_${sId}`)
