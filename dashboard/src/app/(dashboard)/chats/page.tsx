@@ -20,7 +20,8 @@ export default function ChatsPage() {
           *,
           chat_messages(*)
         `)
-        .order('last_interaction', { ascending: false });
+        .order('last_interaction', { ascending: false })
+        .order('created_at', { ascending: false });
 
       // Fallback: if PostgREST relational query returns error or null, run explicit decoupled queries
       if (error || !data) {
@@ -28,7 +29,8 @@ export default function ChatsPage() {
         const { data: sessData } = await supabase
           .from('chat_sessions')
           .select('*')
-          .order('last_interaction', { ascending: false });
+          .order('last_interaction', { ascending: false })
+          .order('created_at', { ascending: false });
 
         if (sessData) {
           const { data: msgData } = await supabase

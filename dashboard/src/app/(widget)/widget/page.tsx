@@ -432,16 +432,16 @@ function WidgetContent() {
                     <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl" style={{ border: `1px solid ${theme.inputBorder}`, background: theme.inputBg }}>
                       <input
                         type="text"
-                        placeholder={runState === "waiting" ? "Écrivez votre message..." : "Message..."}
+                        placeholder="Écrivez votre message..."
                         value={inputValue}
                         onChange={e => setInputValue(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSend()}
-                        disabled={runState !== "waiting" && runState !== "done"}
+                        disabled={loading || (isWorkflowActive && runState !== "waiting" && runState !== "done")}
                         className="flex-1 bg-transparent text-sm outline-none disabled:opacity-50"
                         style={{ color: theme.inputText }}
                       />
                       <button
-                        disabled={(runState !== "waiting" && runState !== "done") || !inputValue.trim()}
+                        disabled={loading || !inputValue.trim() || (isWorkflowActive && runState !== "waiting" && runState !== "done")}
                         onClick={() => handleSend()}
                         className="flex h-7 w-7 shrink-0 items-center justify-center text-white transition disabled:opacity-30 rounded-lg"
                         style={{ background: theme.sendBtnBg }}

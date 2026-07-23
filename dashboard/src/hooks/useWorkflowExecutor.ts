@@ -98,6 +98,7 @@ export function useWorkflowExecutor(projectId: string | null) {
         .from('chat_sessions')
         .upsert({
           id: sId,
+          agent_id: 'agent_1782558058884_2og9p',
           user_name: `Visitor-${shortId}`,
           is_taken_over: false,
           last_interaction: new Date().toISOString()
@@ -175,12 +176,35 @@ export function useWorkflowExecutor(projectId: string | null) {
 
       try {
         // Always prefer the _published snapshot (what Publish button creates)
-        let row = await loadWorkflow(`${targetProjectId}_published`);
-        if (!row) {
-          console.warn('[useWorkflowExecutor] No published snapshot for', targetProjectId, '— loading draft instead. Click Publish in Canvas Flow to sync your widget.');
+        let row = targetProjectId ? await loadWorkflow(`${targetProjectId}_published`) : null;
+        if (!row && targetProjectId) {
+          console.warn('[useWorkflowExecutor] No published snapshot for', targetProjectId, '— loading draft instead.');
           row = await loadWorkflow(targetProjectId as string);
-        } else {
-          console.log('[useWorkflowExecutor] Loaded published workflow snapshot:', `${targetProjectId}_published`);
+        }
+
+        // Ultimate fallback if specified targetProjectId does not exist in DB
+        if (!row) {
+          console.log('[useWorkflowExecutor] Target project ID not found in DB — falling back to latest published workflow...');
+          const { data: fallbackPublished } = await supabase
+            .from('workflows')
+            .select('id')
+            .like('id', '%\\_published%')
+            .order('updated_at', { ascending: false })
+            .limit(1);
+
+          if (fallbackPublished && fallbackPublished.length > 0) {
+            row = await loadWorkflow(fallbackPublished[0].id);
+          } else {
+            const { data: fallbackDraft } = await supabase
+              .from('workflows')
+              .select('id')
+              .not('id', 'like', '%\\_published%')
+              .order('updated_at', { ascending: false })
+              .limit(1);
+            if (fallbackDraft && fallbackDraft.length > 0) {
+              row = await loadWorkflow(fallbackDraft[0].id);
+            }
+          }
         }
 
         if (row) {
@@ -586,6 +610,58 @@ export function useWorkflowExecutor(projectId: string | null) {
     }
   }, [nodes, runWorkflow, dbSessionId]);
 
+  // ── Direct AI fallback when no workflow step is waiting ─────────────────────
+  const sendDirectAIMessage = useCallback(async (text: string) => {
+    const sId = dbSessionIdRef.current;
+    if (!sId) return;
+
+    setLoading(true);
+    try {
+      const agentIds = Object.keys(agentsMap);
+      const agentId = agentIds.length > 0 ? agentIds[0] : 'agent_1782558058884_2og9p';
+      const allSelectionsCtx = globalContextRef.current.join(", ");
+
+      const agentRes = await fetch("/api/chat/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId,
+          messages: [{ role: "user", content: text }],
+          sessionId: sId,
+          userContext: allSelectionsCtx || undefined,
+        }),
+      });
+
+      if (agentRes.ok) {
+        const data: { content: string; sessionId?: string } = await agentRes.json();
+        const rawReply = data.content || "(empty response)";
+        const strippedReply = stripThinking(rawReply);
+        const { text: introText, closingText: rawClosing, productCards } = parseProductDisplay(strippedReply);
+        const textToProcess = rawClosing ? rawClosing : introText;
+        const afterDetails = textToProcess.replace(/<details_table>[\s\S]*?<\/details_table>/g, "").trim();
+        const { text: finalClosingText, quickReplies } = parseQuickReplies(afterDetails);
+        const finalIntroText = rawClosing ? introText : finalClosingText;
+
+        addChat({
+          role: "bot",
+          text: finalIntroText,
+          closingText: rawClosing ? finalClosingText : undefined,
+          quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
+          productCards: productCards.length > 0 ? productCards : undefined,
+        });
+
+        await supabase.from('chat_sessions').update({ last_interaction: new Date().toISOString() }).eq('id', sId);
+      } else {
+        addChat({ role: "bot", text: "Désolé, une erreur est survenue." });
+      }
+    } catch (err: any) {
+      console.error("[useWorkflowExecutor] Direct AI error:", err);
+      addChat({ role: "bot", text: "Désolé, problème de connexion." });
+    } finally {
+      setLoading(false);
+    }
+  }, [agentsMap, addChat]);
+
   // ── User sends a text message ──────────────────────────────────────────────
   const handleSend = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -611,8 +687,11 @@ export function useWorkflowExecutor(projectId: string | null) {
       globalContextRef.current.push(text);
       waitResolveRef.current(text);
       waitResolveRef.current = null;
+    } else if (!isTakenOverRef.current) {
+      globalContextRef.current.push(text);
+      await sendDirectAIMessage(text);
     }
-  }, []);
+  }, [sendDirectAIMessage]);
 
   // ── Canvas-flow button clicks ──────────────────────────────────────────────
   const handleButtonClick = useCallback(async (label: string, btnId: string, msgId: string) => {
