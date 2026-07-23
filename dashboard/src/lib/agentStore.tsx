@@ -323,6 +323,10 @@ export function useAgentActions() {
         ...initial,
       }
       dispatch({ type: 'CREATE_AGENT', payload: agent })
+      // Auto-persist to Supabase immediately so the agent exists in DB right away
+      persistAgent(agent).catch(err => {
+        console.error('[agentStore] Failed to auto-persist new agent:', err)
+      })
       return id
     },
     [dispatch]

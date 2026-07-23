@@ -265,15 +265,46 @@ export function useWorkflowExecutor(projectId: string | null) {
       // ── Agent Node ──────────────────────────────────────────────────────────
       if (node.type === "agent") {
         const agentId = node.agentId;
-        if (!agentId || !agentsMap[agentId]) {
-          addChat({ role: "bot", text: "⚠️ Agent configuration missing." });
+        if (!agentId) {
+          addChat({ role: "bot", text: "⚠️ No agent assigned to this node. Please select an agent in Canvas Flow." });
           const { node: n, deadEnd } = findNextNode(node.id);
           if (deadEnd || !n) break;
           node = n;
           continue;
         }
 
-        const ag = agentsMap[agentId];
+        let ag = agentsMap[agentId];
+        if (!ag) {
+          try {
+            const { data: fetchedRow } = await supabase
+              .from('agents')
+              .select('*')
+              .eq('id', agentId)
+              .maybeSingle();
+            if (fetchedRow) {
+              ag = rowToAgentConfig(fetchedRow);
+              setAgentsMap(prev => ({ ...prev, [agentId]: ag }));
+            }
+          } catch (err) {
+            console.warn('[useWorkflowExecutor] On-demand agent fetch error:', err);
+          }
+        }
+
+        if (!ag) {
+          ag = {
+            id: agentId,
+            title: "AI Agent",
+            model: "gpt-4o-mini",
+            credentialId: null,
+            instructions: "",
+            tools: [],
+            knowledgeBase: { isConfigured: false, documents: [] },
+            exitConditions: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: "published",
+          };
+        }
 
         // Consume pre-captured reply from a connected Message block
         const precaptured = workflowMemoryRef.current[node.id];

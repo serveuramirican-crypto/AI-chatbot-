@@ -22,6 +22,8 @@ import { MessageNodeData } from "./MessageNode";
 import { ApiNodeData } from "./ApiNode";
 import type { AgentConfig } from "@/types/agent";
 import { useChatTheme } from "./ChatDesignPanel";
+import { supabase } from "@/lib/supabase";
+import { rowToAgentConfig } from "@/lib/agentStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface LogEntry {
@@ -438,7 +440,7 @@ export default function RunModal({
         const agentNode = node as unknown as { id: string; agentId?: string };
         const agentId = agentNode.agentId;
 
-        if (!agentId || !agentsMap[agentId]) {
+        if (!agentId) {
           addLog(
             "warn",
             `[Agent Node] No agent configured on node ${node.id.slice(0, 8)}… — skipping.`,
@@ -454,16 +456,46 @@ export default function RunModal({
           if (deadEnd || !nextAgentNode) break;
           node = nextAgentNode;
           continue;
-        } else {
-          const ag = agentsMap[agentId];
-          addLog(
-            "info",
-            `[Agent Node] Running agent: "${ag.title}" (${ag.model})`,
-          );
-          addLog(
-            "log",
-            `[Agent Node] Instructions: ${ag.instructions.slice(0, 120) || "(none)"}${ag.instructions.length > 120 ? "…" : ""}`,
-          );
+        }
+
+        let ag = agentsMap[agentId];
+        if (!ag) {
+          try {
+            const { data: fetchedRow } = await supabase
+              .from('agents')
+              .select('*')
+              .eq('id', agentId)
+              .maybeSingle();
+            if (fetchedRow) ag = rowToAgentConfig(fetchedRow);
+          } catch (err) {
+            console.warn('[RunModal] On-demand agent fetch error:', err);
+          }
+        }
+
+        if (!ag) {
+          ag = {
+            id: agentId,
+            title: "AI Agent",
+            model: "gpt-4o-mini",
+            credentialId: null,
+            instructions: "",
+            tools: [],
+            knowledgeBase: { isConfigured: false, documents: [] },
+            exitConditions: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: "published",
+          };
+        }
+
+        addLog(
+          "info",
+          `[Agent Node] Running agent: "${ag.title}" (${ag.model})`,
+        );
+        addLog(
+          "log",
+          `[Agent Node] Instructions: ${ag.instructions.slice(0, 120) || "(none)"}${ag.instructions.length > 120 ? "…" : ""}`,
+        );
 
           // ── Check for a pre-captured reply from a connected Message block ────
           const precaptured = workflowMemoryRef.current[node.id];
@@ -762,7 +794,6 @@ export default function RunModal({
             continue;
           }
         }
-      }
 
       // ── Carousel node handling ────────────────────────────────────────
       if (node.type === 'carousel') {
