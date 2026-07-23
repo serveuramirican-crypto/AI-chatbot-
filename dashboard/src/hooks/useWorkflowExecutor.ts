@@ -347,7 +347,7 @@ export function useWorkflowExecutor(projectId: string | null) {
               body: JSON.stringify({
                 agentId,
                 messages: [{ role: "user", content: combinedMsg }],
-                sessionId: agentSessionIdRef.current ?? undefined,
+                sessionId: agentSessionIdRef.current ?? dbSessionIdRef.current ?? undefined,
                 userContext: allSelectionsCtx || undefined,
               }),
             });
@@ -426,7 +426,7 @@ export function useWorkflowExecutor(projectId: string | null) {
               body: JSON.stringify({
                 agentId,
                 messages: [{ role: "user", content: userLabel }],
-                sessionId: agentSessionIdRef.current ?? undefined,
+                sessionId: agentSessionIdRef.current ?? dbSessionIdRef.current ?? undefined,
                 userContext: agentLoopCtx,
               }),
             });
@@ -588,8 +588,17 @@ export function useWorkflowExecutor(projectId: string | null) {
     const userMsgId = makeId();
     setMessages(prev => [...prev, { id: userMsgId, role: "user", text }]);
 
-    await supabase.from('chat_messages').insert({ id: userMsgId, session_id: sId, role: 'user', content: text });
-    await supabase.from('chat_sessions').update({ last_interaction: new Date().toISOString() }).eq('id', sId);
+    await supabase.from('chat_messages').insert({ session_id: sId, role: 'user', content: text });
+
+    // Update session last_interaction + user_name if name/email provided
+    const updateData: Record<string, any> = { last_interaction: new Date().toISOString() };
+    if (text.includes('@') || (text.trim().length > 1 && !text.toLowerCase().startsWith('http'))) {
+      const cleanName = text.trim();
+      if (cleanName.includes('@')) {
+        updateData.user_name = cleanName;
+      }
+    }
+    await supabase.from('chat_sessions').update(updateData).eq('id', sId);
 
     if (!isTakenOverRef.current && waitResolveRef.current) {
       globalContextRef.current.push(text);
@@ -607,7 +616,7 @@ export function useWorkflowExecutor(projectId: string | null) {
     const userMsgId = makeId();
     setMessages(prev => [...prev, { id: userMsgId, role: "user", text: label }]);
 
-    await supabase.from('chat_messages').insert({ id: userMsgId, session_id: sId, role: 'user', content: label });
+    await supabase.from('chat_messages').insert({ session_id: sId, role: 'user', content: label });
     await supabase.from('chat_sessions').update({ last_interaction: new Date().toISOString() }).eq('id', sId);
 
     if (!isTakenOverRef.current && waitResolveRef.current) {
@@ -618,9 +627,16 @@ export function useWorkflowExecutor(projectId: string | null) {
   }, []);
 
   // ── Quick reply clicks (pill buttons from agent) ───────────────────────────
-  const handleQuickReply = useCallback((text: string) => {
+  const handleQuickReply = useCallback(async (text: string) => {
     setMessages(prev => prev.map(m => m.quickReplies ? { ...m, quickReplies: undefined } : m));
-    setMessages(prev => [...prev, { id: makeId(), role: "user", text }]);
+    const userMsgId = makeId();
+    setMessages(prev => [...prev, { id: userMsgId, role: "user", text }]);
+
+    const sId = dbSessionIdRef.current;
+    if (sId) {
+      await supabase.from('chat_messages').insert({ session_id: sId, role: 'user', content: text });
+      await supabase.from('chat_sessions').update({ last_interaction: new Date().toISOString() }).eq('id', sId);
+    }
 
     if (waitResolveRef.current) {
       globalContextRef.current.push(text);

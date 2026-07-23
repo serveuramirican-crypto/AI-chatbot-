@@ -36,21 +36,56 @@ export default function ChatsPage() {
 
     // 2. Setup Realtime Subscriptions
     const channel = supabase.channel('chats_realtime')
-      // Listen to new messages
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
-        const newMessage = payload.new;
-        setConversations(prev => prev.map(conv => {
-          if (conv.id === newMessage.session_id) {
-            return {
-              ...conv,
-              chat_messages: [...(conv.chat_messages || []), newMessage as any],
-              last_interaction: newMessage.created_at,
-            };
-          }
-          return conv;
-        }));
+      // Listen to new chat sessions created by widget visitors
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_sessions' }, async (payload) => {
+        const newSession = payload.new as ChatSession;
+        setConversations(prev => {
+          if (prev.some(c => c.id === newSession.id)) return prev;
+          const fullSession = { ...newSession, chat_messages: newSession.chat_messages || [] };
+          return [fullSession, ...prev];
+        });
+        setSelectedId(prev => prev || newSession.id);
       })
-      // Listen to session updates (e.g. takeover status)
+      // Listen to new messages
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, async (payload) => {
+        const newMessage = payload.new;
+        setConversations(prev => {
+          const exists = prev.some(conv => conv.id === newMessage.session_id);
+          if (exists) {
+            return prev.map(conv => {
+              if (conv.id === newMessage.session_id) {
+                const msgs = conv.chat_messages || [];
+                if (msgs.some(m => m.id === newMessage.id)) return conv;
+                return {
+                  ...conv,
+                  chat_messages: [...msgs, newMessage as any],
+                  last_interaction: newMessage.created_at || new Date().toISOString(),
+                };
+              }
+              return conv;
+            });
+          }
+          return prev;
+        });
+
+        // If session wasn't found in existing state, fetch it from DB on-the-fly
+        const { data: freshSession } = await supabase
+          .from('chat_sessions')
+          .select('*, chat_messages(*)')
+          .eq('id', newMessage.session_id)
+          .single();
+
+        if (freshSession) {
+          setConversations(prev => {
+            if (prev.some(c => c.id === freshSession.id)) {
+              return prev.map(conv => conv.id === freshSession.id ? (freshSession as ChatSession) : conv);
+            }
+            return [freshSession as ChatSession, ...prev];
+          });
+          setSelectedId(prev => prev || freshSession.id);
+        }
+      })
+      // Listen to session updates (e.g. takeover status, name change)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_sessions' }, (payload) => {
         const updatedSession = payload.new;
         setConversations(prev => prev.map(conv => {

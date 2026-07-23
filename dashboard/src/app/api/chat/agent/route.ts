@@ -412,9 +412,11 @@ export async function POST(req: Request) {
 
     if (!sessionId) {
       // Create a new session
+      const freshUuid = crypto.randomUUID();
+      const shortId = freshUuid.slice(0, 5);
       const { data: newSession, error: sessionError } = await supabaseServer
         .from('chat_sessions')
-        .insert({ agent_id: agentId })
+        .insert({ id: freshUuid, user_name: `Visitor-${shortId}`, agent_id: agentId })
         .select('id')
         .single()
 
