@@ -174,6 +174,40 @@ export default function ChatsPage() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!window.confirm("Are you sure you want to delete all chat conversations? This action cannot be undone.")) {
+      return;
+    }
+
+    const ids = conversations.map(c => c.id);
+    if (ids.length === 0) return;
+
+    try {
+      // First delete all messages for these sessions
+      const { error: msgError } = await supabase
+        .from('chat_messages')
+        .delete()
+        .in('session_id', ids);
+
+      if (msgError) throw msgError;
+
+      // Then delete the sessions themselves
+      const { error: sessionError } = await supabase
+        .from('chat_sessions')
+        .delete()
+        .in('id', ids);
+
+      if (sessionError) throw sessionError;
+
+      // Update local state
+      setConversations([]);
+      setSelectedId(null);
+    } catch (error) {
+      console.error('Error deleting all conversations:', error);
+      alert('Failed to delete conversations. Please try again.');
+    }
+  };
+
   return (
     <div className="flex h-full -mx-4 -my-8 sm:-mx-6 lg:-mx-8 overflow-hidden rounded-xl bg-[#000000]">
       {/* We use negative margins to break out of the layout.tsx padding because this is a full-bleed app-like page */}
@@ -181,6 +215,7 @@ export default function ChatsPage() {
         conversations={conversations} 
         selectedId={selectedId} 
         onSelect={handleSelectConversation} 
+        onDeleteAll={handleDeleteAll}
       />
       
       <div className="flex-1 flex flex-col min-w-0 bg-[#000000]">

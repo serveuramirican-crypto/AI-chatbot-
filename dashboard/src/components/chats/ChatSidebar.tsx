@@ -1,13 +1,14 @@
 import { Conversation } from './types';
-import { User, MessageSquare, Clock } from 'lucide-react';
+import { User, MessageSquare, Clock, Trash2 } from 'lucide-react';
 
 interface ChatSidebarProps {
   conversations: Conversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDeleteAll?: () => void;
 }
 
-export function ChatSidebar({ conversations, selectedId, onSelect }: ChatSidebarProps) {
+export function ChatSidebar({ conversations, selectedId, onSelect, onDeleteAll }: ChatSidebarProps) {
   // Sort conversations by last_interaction or created_at descending so newest chats appear first
   const sortedConversations = [...conversations].sort((a, b) => {
     const timeA = new Date(a.last_interaction || a.created_at || 0).getTime();
@@ -22,6 +23,15 @@ export function ChatSidebar({ conversations, selectedId, onSelect }: ChatSidebar
           <MessageSquare className="w-5 h-5 text-blue-500" />
           Conversations
         </div>
+        {onDeleteAll && conversations.length > 0 && (
+          <button 
+            onClick={onDeleteAll}
+            className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors"
+            title="Delete all conversations"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
       
       <div className="flex-1 overflow-y-auto">
