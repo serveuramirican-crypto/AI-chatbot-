@@ -1,10 +1,18 @@
 export type MessageRole = 'user' | 'agent' | 'admin';
 
 export interface ProductRecommendation {
-  id: string;
-  name: string;
-  image: string;
-  price: number;
+  id?: string;
+  name?: string;
+  image?: string;
+  image_url?: string;
+  price?: number | string;
+  link?: string;
+  description?: string;
+  color?: string;
+  size?: string;
+  fabric?: string;
+  category?: string;
+  [key: string]: any;
 }
 
 // Matches the `chat_messages` table in Supabase
@@ -13,7 +21,7 @@ export interface ChatMessage {
   session_id: string;
   role: MessageRole;
   content: string;
-  products?: ProductRecommendation[] | null;
+  products?: ProductRecommendation[] | string | null;
   created_at: string;
 }
 
@@ -31,3 +39,4 @@ export interface ChatSession {
 
 // Backward compatibility alias for the UI components if needed
 export type Conversation = ChatSession;
+

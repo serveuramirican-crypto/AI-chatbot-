@@ -13,7 +13,7 @@ export function ChatSidebar({ conversations, selectedId, onSelect, onDeleteAll }
   const sortedConversations = [...conversations].sort((a, b) => {
     const timeA = new Date(a.last_interaction || a.created_at || 0).getTime();
     const timeB = new Date(b.last_interaction || b.created_at || 0).getTime();
-    return timeB - timeA;
+    return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
   });
 
   return (
@@ -39,9 +39,10 @@ export function ChatSidebar({ conversations, selectedId, onSelect, onDeleteAll }
           <div className="p-4 text-xs text-zinc-500 text-center">No active chats</div>
         ) : (
           sortedConversations.map((conv) => {
-            const interactionDate = new Date(conv.last_interaction || conv.created_at || Date.now());
-            const displayTime = isNaN(interactionDate.getTime())
-              ? 'Just now'
+            const rawTime = conv.last_interaction || conv.created_at;
+            const interactionDate = rawTime ? new Date(rawTime) : null;
+            const displayTime = (!interactionDate || isNaN(interactionDate.getTime()))
+              ? 'Recent'
               : interactionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
             return (
@@ -79,4 +80,5 @@ export function ChatSidebar({ conversations, selectedId, onSelect, onDeleteAll }
     </div>
   );
 }
+
 
