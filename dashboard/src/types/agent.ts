@@ -47,7 +47,7 @@ export const QUERY_PRODUCTS_DB_TOOL_SCHEMA = {
     'Searches the product catalog database by name, description, or features. ' +
     'Use this whenever the user asks about product availability, pricing, features, or stock — ' +
     'never guess or fabricate product details.',
-  input_schema: {
+  parameters: {
     type: 'object',
     properties: {
       search_query: {
@@ -75,13 +75,25 @@ export const SEARCH_KNOWLEDGE_BASE_TOOL_SCHEMA = {
   name: 'search_knowledge_base',
   description:
     'Searches the Knowledge Base for product information, FAQs, and store data using a semantic search query.',
-  input_schema: {
+  parameters: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
         description: 'Semantic search query, e.g. "black chemise size S" or "return policy"',
       },
+      color: {
+        type: 'string',
+        description: 'Optional specific color requested by the user, e.g. "black", "red"',
+      },
+      size: {
+        type: 'string',
+        description: 'Optional specific size requested by the user, e.g. "S", "M", "L", "XL"',
+      },
+      category: {
+        type: 'string',
+        description: 'Optional product category, e.g. "chemise", "pull", "pantalon"',
+      }
     },
     required: ['query'],
   },

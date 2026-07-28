@@ -122,7 +122,8 @@ export function parseQuickReplies(raw: string): {
  * This is internal chain-of-thought that should never be shown to the end user.
  */
 export function stripThinking(raw: string): string {
-  return raw.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
+  if (!raw) return "";
+  return raw.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, "").trim();
 }
 
 /**

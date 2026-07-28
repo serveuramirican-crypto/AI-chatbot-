@@ -240,7 +240,10 @@ ${previousContext}
         while ((match = buttonRegex.exec(text)) !== null) {
           suggestedButtons.push(match[1].trim());
         }
-        responseText = text.replace(buttonRegex, '').trim();
+        responseText = text
+          .replace(buttonRegex, '')
+          .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '')
+          .trim();
 
         const providerName = provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : 'OpenRouter';
         source = toolCalls && toolCalls.length > 0 ? `${providerName} + Tool Call` : providerName;

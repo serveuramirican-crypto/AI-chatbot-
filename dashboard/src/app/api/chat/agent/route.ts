@@ -85,6 +85,11 @@ function extractProductKeywords(raw: string): string[] {
     .filter(t => t.length > 1 && !COLOR_MAP[t] && !SIZE_TOKENS.has(t) && !NOISE_WORDS.has(t))
 }
 
+function stripThinking(raw: string): string {
+  if (!raw) return '';
+  return raw.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '').trim();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,20 +307,9 @@ If no product matches all criteria, apologize politely (e.g. "سمحليا، ه�
     prompt += `\n\n[RESPONSE STRUCTURE - Follow EXACTLY]\nYour response MUST follow this 3-part structure when showing products:\n\nPART 1 - Intro (1 line only): One friendly sentence in Arabic/French.\n\nPART 2 - Product Cards:\nUse the <product_display> XML tag. ALWAYS include ALL these fields per product:\n<product_display>[{"name":"...","price":"...","image_url":"...","description":"max 10 words","link":"...","color":"...","size":"...","category":"...","fabric":"..."}]</product_display>\nFIELD RULES:\n- color: the Couleur field from KB (e.g. BLACK, RED, BLUE)\n- size: the Size field from KB (e.g. S, M, L, XL)\n- category: the Category field from KB (e.g. chemise)\n- fabric: material from the Description field (e.g. Coton 100%, Polyester 58%)\n- image_url: exact URL from KB. If none: https://placehold.co/400x300?text=ProductName\n- description: SHORT max 10 words summary\n- CRITICAL: products must match KB results from THIS turn ONLY. Never copy from previous messages.\n- Do NOT use markdown code fences around the JSON.\n\nPART 3 - Closing + Buttons:\nOne short closing sentence then the <options> quick-reply buttons.`
   }
 
-  prompt += `\n\n[Reasoning & Analysis Process]
-CRITICAL: You MUST think step by step inside a <thinking> tag BEFORE writing your final response. This tag is HIDDEN from the user — it is for your internal reasoning only. Never show it.
-Inside the <thinking> tag:
-1. Parse the user's request: identify product type, Couleur (color), Size, and any other criteria.
-2. For EACH product from the Knowledge Base tool, check field by field:
-   - Product Name  : matches the requested type?
-   - Category      : correct category?
-   - Size          : EXACT match? (if user said S, only S)
-   - Couleur       : EXACT match? (Noir = BLACK, Rouge = RED, Bleu = BLUE)
-   - Price         : note for display
-   - Description   : extract fabric/cut for the details table
-3. Keep ONLY products that pass ALL checks. Discard the rest.
-4. Plan the 4-part structured response.
-</thinking>`
+  prompt += `\n\n[Execution & Reasoning Rules]
+CRITICAL: When the user asks for a product or specifies criteria (such as product name, size, color, category), you MUST IMMEDIATELY call the search tool (search_knowledge_base or query_products_db) FIRST before generating any visible response text.
+CRITICAL: NEVER output raw <thinking> tags, function call names, or internal reasoning blocks in your visible text response. Perform all tool calls silently using the tool calling API.`
 
   if (hasButtonsTool) {
     prompt += `\n\n[Quick Reply Buttons]\nAt the very end of your response, you MUST provide 3 to 4 short, highly relevant suggested replies for the user to click. Format them strictly as a JSON array enclosed in XML tags like this: <options>["Order Support", "FAQ", "Track Order"]</options>\nDo NOT explain or label the options block — just append it directly after your main response text.`
@@ -776,6 +770,9 @@ export async function POST(req: Request) {
 
     // ── Save assistant response to DB ──────────────────────────────────────
     // (Handled by the client after parsing)
+
+    // Strip any internal thinking block before returning response
+    finalResponseContent = stripThinking(finalResponseContent)
 
     return NextResponse.json({
       role: 'assistant',
