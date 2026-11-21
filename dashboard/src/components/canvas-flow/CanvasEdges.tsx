@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import {
+  MSG_WIDTH,
   MSG_NODE_HEADER_H,
   MSG_NODE_BODY_H,
   MSG_BUTTON_H,
   MSG_BUTTON_GAP,
+  MSG_DEFAULT_CENTER_Y,
+  getMsgButtonTop,
 } from './MessageNode';
 import {
   PB_NODE_HEADER_H,
@@ -21,17 +24,16 @@ import {
 } from './AgentNode';
 
 // ── Layout constants ────────────────────────────────────────────────────────────
-const START_WIDTH  = 130;
-const START_HEIGHT = 40;
-const MSG_WIDTH    = 256;
-const MSG_DEFAULT_CENTER_Y = MSG_NODE_HEADER_H + MSG_NODE_BODY_H / 2;
+export const START_WIDTH  = 138;
+export const START_HEIGHT = 42;
 
 // ── Color palette ─────────────────────────────────────────────────────────────
-const C_IDLE_START  = 'white';
-const C_IDLE_END    = 'white';
-const C_ACTIVE      = 'white';
-const C_ARROW_IDLE  = 'white';
-const C_ARROW_ACT   = 'white';
+const C_IDLE_LINE   = '#94a3b8';
+const C_IDLE_GLOW   = 'rgba(148, 163, 184, 0.2)';
+const C_ACTIVE_LINE = '#3b82f6';
+const C_ACTIVE_GLOW = 'rgba(59, 130, 246, 0.5)';
+const C_ARROW_IDLE  = '#94a3b8';
+const C_ARROW_ACT   = '#3b82f6';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface NodeButton { id: string; label: string }
@@ -49,8 +51,10 @@ interface CanvasNode {
   type?: string;
   position: { x: number; y: number };
   buttons?: NodeButton[];
-  /** For playbook_reference nodes — resolved by CanvasEdges to get exit condition ports */
+  saveEntireReply?: boolean;
   playbookId?: string;
+  agentId?: string;
+  cards?: any[];
   [key: string]: any;
 }
 
@@ -61,22 +65,19 @@ interface CanvasEdgesProps {
   selectedEdgeId?: string | null;
   onSelectEdge?: (edgeId: string | null) => void;
   onDeleteEdge?: (edgeId: string) => void;
-  /** Pass the full playbook store so edges can resolve exit-condition port positions */
   getPlaybook?: (id: string) => { exitConditions: ExitCondition[] } | undefined;
-  /** Pass the agent store so edges can resolve agent exit-condition port positions */
   getAgent?: (id: string) => { exitConditions: ExitCondition[] } | undefined;
-  /** Pass carousel offsets to resolve carousel button positions */
   carouselOffsets?: Record<string, Record<string, number>>;
 }
 
 // ── Bezier helpers ────────────────────────────────────────────────────────────
-function getBezierPath(x1: number, y1: number, x2: number, y2: number): string {
+export function getBezierPath(x1: number, y1: number, x2: number, y2: number): string {
   const dx = Math.abs(x2 - x1);
   const offset = Math.min(Math.max(dx * 0.5, 80), 240);
   return `M ${x1} ${y1} C ${x1 + offset} ${y1}, ${x2 - offset} ${y2}, ${x2} ${y2}`;
 }
 
-function getBezierMidpoint(
+export function getBezierMidpoint(
   x1: number, y1: number, x2: number, y2: number
 ): { mx: number; my: number } {
   const dx = Math.abs(x2 - x1);
@@ -104,27 +105,27 @@ export default function CanvasEdges({
       style={{ zIndex: 10 }}
     >
       <defs>
-        {/* ── Upgrade 1: Flow animation keyframes ──────────────────────────────── */}
+        {/* ── Flow animation keyframes ──────────────────────────────── */}
         <style>{`
-          @keyframes edge-flow {
+          @keyframes edge-flow-dash {
             from { stroke-dashoffset: 24; }
             to   { stroke-dashoffset: 0;  }
           }
-          @keyframes port-pulse {
-            0%   { r: 6;  opacity: 0.7; }
-            60%  { r: 12; opacity: 0;   }
-            100% { r: 12; opacity: 0;   }
+          @keyframes port-pulse-glow {
+            0%   { r: 5;  opacity: 0.8; stroke-width: 2; }
+            70%  { r: 14; opacity: 0;   stroke-width: 1; }
+            100% { r: 14; opacity: 0;   stroke-width: 0; }
           }
-          .edge-animated {
+          .canvas-edge-idle {
             stroke-dasharray: 6 4;
-            animation: edge-flow 0.55s linear infinite;
+            animation: edge-flow-dash 1.4s linear infinite;
           }
-          .edge-animated-selected {
-            stroke-dasharray: 8 5;
-            animation: edge-flow 0.45s linear infinite;
+          .canvas-edge-active {
+            stroke-dasharray: 8 4;
+            animation: edge-flow-dash 0.6s linear infinite;
           }
-          .port-glow-ring {
-            animation: port-pulse 1.2s ease-out infinite;
+          .port-pulse-effect {
+            animation: port-pulse-glow 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
             pointer-events: none;
           }
         `}</style>
@@ -135,17 +136,9 @@ export default function CanvasEdges({
           <path d="M 0 2 L 9 5 L 0 8 z" fill={C_ARROW_IDLE} />
         </marker>
         <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5"
-          markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 2 L 9 5 L 0 8 z" fill={C_ARROW_ACT} />
+          markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill={C_ARROW_ACT} />
         </marker>
-
-        {/* ── Upgrade 3: Per-edge gradient defs ─────────────────────────────── */}
-        {edges.map((edge) => {
-          // We need source coords for gradient, but we compute them in the main map.
-          // Use a stable gradient id keyed to the edge id. Coords are set below
-          // via the per-edge <linearGradient> rendered dynamically.
-          return null;
-        })}
       </defs>
 
       {edges.map((edge) => {
@@ -174,7 +167,6 @@ export default function CanvasEdges({
                 AG_EXIT_ROW_H / 2;
               edgeLabel = ag!.exitConditions[exitIdx].description.slice(0, 18);
             } else {
-              // No exit conditions — single default port at mid-body
               y1 = sourceNode.position.y + AG_NODE_HEADER_H + AG_NODE_BODY_H / 2;
             }
           // ── playbook_reference source port ─────────────────────────────
@@ -189,67 +181,59 @@ export default function CanvasEdges({
                 PB_NODE_HEADER_H + PB_NODE_BODY_H +
                 exitIdx * (PB_EXIT_ROW_H + PB_EXIT_ROW_GAP) +
                 PB_EXIT_ROW_H / 2;
-              edgeLabel = pb!.exitConditions[exitIdx].description.slice(0, 18)
+              edgeLabel = pb!.exitConditions[exitIdx].description.slice(0, 18);
             } else {
-              // No exit conditions — single default port centered in body
               y1 = sourceNode.position.y + PB_NODE_HEADER_H + PB_NODE_BODY_H / 2;
             }
-            // ── message node source port ──────────────────────────────────
-            } else if (sourceNode.type === 'message' || sourceNode.type === undefined) {
-              x1 = sourceNode.position.x + MSG_WIDTH;
-              if (edge.sourceHandleId && sourceNode.buttons?.length) {
-                const btnIdx = sourceNode.buttons.findIndex((b) => b.id === edge.sourceHandleId);
-                if (btnIdx === -1) return null;
-                y1 =
-                  sourceNode.position.y +
-                  MSG_NODE_HEADER_H + MSG_NODE_BODY_H +
-                  btnIdx * (MSG_BUTTON_H + MSG_BUTTON_GAP) +
-                  MSG_BUTTON_H / 2;
-                edgeLabel = sourceNode.buttons[btnIdx].label;
-              } else {
-                y1 = sourceNode.position.y + MSG_DEFAULT_CENTER_Y;
-              }
-            // ── carousel node source port ─────────────────────────────────
-            } else if (sourceNode.type === 'carousel') {
-              x1 = sourceNode.position.x + 256; // CAROUSEL_WIDTH is 256
-              if (edge.sourceHandleId && carouselOffsets?.[sourceNode.id]?.[edge.sourceHandleId] !== undefined) {
-                y1 = sourceNode.position.y + carouselOffsets[sourceNode.id][edge.sourceHandleId];
-                // Find label just for tooltip/label rendering
-                let foundLabel = '';
-                if (sourceNode.cards) {
-                  for (const c of sourceNode.cards) {
-                    const b = c.buttons?.find((btn: any) => btn.id === edge.sourceHandleId);
-                    if (b) {
-                      foundLabel = b.label;
-                      break;
-                    }
+          // ── message node source port ──────────────────────────────────
+          } else if (sourceNode.type === 'message' || sourceNode.type === undefined) {
+            x1 = sourceNode.position.x + MSG_WIDTH;
+            if (edge.sourceHandleId && sourceNode.buttons?.length) {
+              const btnIdx = sourceNode.buttons.findIndex((b) => b.id === edge.sourceHandleId);
+              if (btnIdx === -1) return null;
+              y1 = sourceNode.position.y + getMsgButtonTop(btnIdx, Boolean(sourceNode.saveEntireReply));
+              edgeLabel = sourceNode.buttons[btnIdx].label;
+            } else {
+              y1 = sourceNode.position.y + MSG_DEFAULT_CENTER_Y;
+            }
+          // ── carousel node source port ─────────────────────────────────
+          } else if (sourceNode.type === 'carousel') {
+            x1 = sourceNode.position.x + 268;
+            if (edge.sourceHandleId && carouselOffsets?.[sourceNode.id]?.[edge.sourceHandleId] !== undefined) {
+              y1 = sourceNode.position.y + carouselOffsets[sourceNode.id][edge.sourceHandleId];
+              let foundLabel = '';
+              if (sourceNode.cards) {
+                for (const c of sourceNode.cards) {
+                  const b = c.buttons?.find((btn: any) => btn.id === edge.sourceHandleId);
+                  if (b) {
+                    foundLabel = b.label;
+                    break;
                   }
                 }
-                edgeLabel = foundLabel;
-              } else {
-                y1 = sourceNode.position.y + 33 + 20; // fallback to header + some offset
               }
+              edgeLabel = foundLabel;
             } else {
-              x1 = sourceNode.position.x + 256;
               y1 = sourceNode.position.y + 50;
             }
+          } else {
+            x1 = sourceNode.position.x + 268;
+            y1 = sourceNode.position.y + 50;
           }
+        }
 
         // ── 2. Target point ────────────────────────────────────────────────
         const targetNode = nodes.find((n) => n.id === edge.to);
         if (!targetNode) return null;
         let x2: number, y2: number;
         if (targetNode.type === 'agent') {
-          // Input port: left edge of agent node, centered in header+body
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + AG_NODE_HEADER_H + AG_NODE_BODY_H / 2;
         } else if (targetNode.type === 'playbook_reference') {
-          // Input port: left edge of the playbook node, centered vertically in header+body
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + PB_NODE_HEADER_H + PB_NODE_BODY_H / 2;
         } else if (targetNode.type === 'carousel') {
           x2 = targetNode.position.x;
-          y2 = targetNode.position.y + 33 + 20; // approx center of header + some body
+          y2 = targetNode.position.y + 50;
         } else {
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + MSG_DEFAULT_CENTER_Y;
@@ -263,70 +247,56 @@ export default function CanvasEdges({
         const isHovered  = hoveredEdgeId  === edge.id;
         const isActive   = isSelected || isHovered;
 
-        // IDs for the per-edge gradient
-        const gradId    = `grad-${edge.id}`;
-        const strokeUrl = `url(#${gradId})`;
+        const gradId    = `edge-grad-${edge.id}`;
         const markerUrl = isActive ? 'url(#arrow-active)' : 'url(#arrow-default)';
-        const strokeWidth = isSelected ? 2.5 : 1.75;
+        const strokeWidth = isSelected ? 2.5 : isActive ? 2.2 : 1.75;
+        const animClass = isActive ? 'canvas-edge-active' : 'canvas-edge-idle';
 
-        // Flow animation class
-        const animClass = isSelected
-          ? 'edge-animated-selected'
-          : isHovered
-          ? 'edge-animated'
-          : '';
+        // Calculate dynamic width for edge label pill
+        const displayLabel = edgeLabel.toUpperCase();
+        const pillWidth = Math.max(displayLabel.length * 7 + 16, 36);
 
         return (
-          <g key={edge.id}>
-
-            {/* ── Upgrade 3: Inline per-edge gradient ──────────────────────
-                 gradientUnits=userSpaceOnUse means x1/y1/x2/y2 are in
-                 the same coordinate system as the path points. */}
+          <g key={edge.id} className="transition-all duration-150">
+            {/* Linear Gradient for this specific edge */}
             <defs>
               <linearGradient
                 id={gradId}
                 gradientUnits="userSpaceOnUse"
                 x1={x1} y1={y1} x2={x2} y2={y2}
               >
-                <stop offset="0%"   stopColor={isActive ? C_ACTIVE : C_IDLE_START} />
-                <stop offset="100%" stopColor={isActive ? C_ACTIVE : C_IDLE_END}   />
+                <stop offset="0%"   stopColor={isActive ? '#60a5fa' : '#cbd5e1'} />
+                <stop offset="100%" stopColor={isActive ? '#3b82f6' : '#94a3b8'} />
               </linearGradient>
             </defs>
 
-            {/* ── Upgrade 4: Port glow rings at source + target ─────────────
-                 Only visible when this edge is hovered or selected. */}
+            {/* Glowing port rings when active */}
             {isActive && (
               <>
-                {/* Source port glow */}
                 <circle
                   cx={x1} cy={y1}
                   r={6}
                   fill="none"
-                  stroke={C_ACTIVE}
-                  strokeWidth={2}
-                  opacity={0.6}
-                  className="port-glow-ring"
+                  stroke={C_ACTIVE_LINE}
+                  className="port-pulse-effect"
                 />
-                {/* Target port glow */}
                 <circle
                   cx={x2} cy={y2}
                   r={6}
                   fill="none"
-                  stroke={isActive ? C_IDLE_END : C_IDLE_START}
-                  strokeWidth={2}
-                  opacity={0.6}
-                  className="port-glow-ring"
-                  style={{ animationDelay: '0.3s' }}
+                  stroke={C_ACTIVE_LINE}
+                  className="port-pulse-effect"
+                  style={{ animationDelay: '0.35s' }}
                 />
               </>
             )}
 
-            {/* ── Invisible hit-area (18px wide, pointer-events: stroke) ─── */}
+            {/* Broad invisible hit area for mouse interaction */}
             <path
               d={pathData}
               fill="none"
               stroke="transparent"
-              strokeWidth={18}
+              strokeWidth={20}
               style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
               onMouseEnter={() => setHoveredEdgeId(edge.id)}
               onMouseLeave={() => setHoveredEdgeId(null)}
@@ -336,63 +306,70 @@ export default function CanvasEdges({
               }}
             />
 
-            {/* ── Upgrade 3 + 1: Gradient visible path + flow animation ─── */}
+            {/* Visible curve path with animated gradient dash flow */}
             <path
               d={pathData}
               fill="none"
-              stroke={strokeUrl}
+              stroke={`url(#${gradId})`}
               strokeWidth={strokeWidth}
               strokeLinecap="round"
               markerEnd={markerUrl}
               className={animClass}
               style={{
                 pointerEvents: 'none',
-                transition: 'stroke-width 0.15s',
-                filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.8)) drop-shadow(0px 0px 4px rgba(255,255,255,0.3))',
-                // Non-animated fallback stroke so the path is always visible
-                ...(animClass ? {} : {}),
+                filter: isActive
+                  ? 'drop-shadow(0 0 6px rgba(59,130,246,0.5))'
+                  : 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))',
               }}
             />
 
-            {/* ── Upgrade 2: Edge label pill ───────────────────────────────
-                 Show a pill with the button label next to the midpoint.
-                 Offset slightly upward (-14px) so it sits above the curve. */}
+            {/* ── Modern Edge Label Pill (e.g. YES, NO) ─────────────────── */}
             {edgeLabel && (
               <g
                 transform={`translate(${mx}, ${my - 14})`}
                 style={{ pointerEvents: 'none' }}
               >
-                {/* Pill background */}
+                {/* Pill Background */}
                 <rect
-                  x={-20} y={-9} width={40} height={18} rx={9}
-                  fill={isActive ? C_ACTIVE : '#64748b'}
-                  opacity={isActive ? 1 : 0.85}
+                  x={-pillWidth / 2}
+                  y={-10}
+                  width={pillWidth}
+                  height={20}
+                  rx={10}
+                  fill={isActive ? '#1d4ed8' : '#1e293b'}
+                  stroke={isActive ? '#60a5fa' : '#475569'}
+                  strokeWidth={1.2}
+                  style={{
+                    filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))',
+                  }}
                 />
-                {/* Label text */}
+                {/* Text */}
                 <text
-                  x={0} y={4}
+                  x={0}
+                  y={4}
                   textAnchor="middle"
-                  fontSize={10}
-                  fontWeight={600}
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  fill="white"
-                  letterSpacing={0.3}
+                  fontSize={9.5}
+                  fontWeight={700}
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                  fill="#ffffff"
+                  letterSpacing={0.5}
                 >
-                  {edgeLabel.toUpperCase()}
+                  {displayLabel}
                 </text>
               </g>
             )}
 
-            {/* ── Delete button at midpoint (selected only) ─────────────── */}
+            {/* ── Delete Button on Edge when Selected ─────────────────────── */}
             {isSelected && (
               <g
-                transform={`translate(${mx + (edgeLabel ? 26 : 0)}, ${my})`}
+                transform={`translate(${mx + (edgeLabel ? pillWidth / 2 + 14 : 0)}, ${my})`}
                 style={{ pointerEvents: 'all', cursor: 'pointer' }}
                 onClick={(e) => { e.stopPropagation(); onDeleteEdge?.(edge.id); }}
+                className="transition-transform hover:scale-110"
               >
-                <circle r={10} fill="white" stroke={C_ACTIVE} strokeWidth={1.5} />
-                <line x1={-4} y1={-4} x2={4} y2={4} stroke={C_ACTIVE} strokeWidth={1.75} strokeLinecap="round" />
-                <line x1={4} y1={-4} x2={-4} y2={4} stroke={C_ACTIVE} strokeWidth={1.75} strokeLinecap="round" />
+                <circle r={11} fill="#ef4444" stroke="#ffffff" strokeWidth={1.5} />
+                <line x1={-3.5} y1={-3.5} x2={3.5} y2={3.5} stroke="#ffffff" strokeWidth={1.8} strokeLinecap="round" />
+                <line x1={3.5} y1={-3.5} x2={-3.5} y2={3.5} stroke="#ffffff" strokeWidth={1.8} strokeLinecap="round" />
               </g>
             )}
           </g>
@@ -401,5 +378,3 @@ export default function CanvasEdges({
     </svg>
   );
 }
-
-

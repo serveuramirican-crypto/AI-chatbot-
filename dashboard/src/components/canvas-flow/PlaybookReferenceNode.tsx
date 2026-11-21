@@ -7,7 +7,7 @@ import { usePlaybook } from "@/lib/playbookStore"
 
 // ── Layout constants (exported for CanvasEdges.tsx consumption) ───────────────
 /** Width of the node card (matches CSS w-64) */
-export const PB_NODE_WIDTH        = 256
+export const PB_NODE_WIDTH        = 268
 /** Header bar height */
 export const PB_NODE_HEADER_H     = 36
 /** Body text area height */

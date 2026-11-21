@@ -9,7 +9,7 @@ import type { AgentNodeData } from "@/types/agent"
 // ── Layout constants (exported for CanvasEdges.tsx consumption) ───────────────
 
 /** Width of the agent node card */
-export const AG_NODE_WIDTH         = 256
+export const AG_NODE_WIDTH         = 268
 /** Height of the header bar */
 export const AG_NODE_HEADER_H      = 40
 /** Height of the body section (Edit Agent button) */

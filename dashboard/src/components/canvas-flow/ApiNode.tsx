@@ -17,7 +17,7 @@ export interface ApiNodeData {
   url: string
   headers: KeyValuePair[]
   params: KeyValuePair[]
-  body: KeyValuePair[] // dynamic input variables
+  body: KeyValuePair[]
   timeout: number
   asyncExecution: boolean
   captureResponse: boolean
@@ -25,8 +25,9 @@ export interface ApiNodeData {
   position: { x: number; y: number }
 }
 
-export const API_NODE_HEADER_H = 33
-export const API_NODE_BODY_H = 52
+export const API_NODE_WIDTH = 268
+export const API_NODE_HEADER_H = 38
+export const API_NODE_BODY_H = 56
 
 interface ApiNodeProps {
   data: ApiNodeData
@@ -48,41 +49,51 @@ export default function ApiNode({
   connectedHandles = new Set(),
 }: ApiNodeProps) {
   const methodColors: Record<string, string> = {
-    GET: 'text-blue-500 bg-blue-50',
-    POST: 'text-green-500 bg-green-50',
-    PUT: 'text-orange-500 bg-orange-50',
-    PATCH: 'text-yellow-600 bg-yellow-50',
-    DELETE: 'text-red-500 bg-red-50',
+    GET: 'text-blue-700 bg-blue-100/80 border-blue-200',
+    POST: 'text-emerald-700 bg-emerald-100/80 border-emerald-200',
+    PUT: 'text-orange-700 bg-orange-100/80 border-orange-200',
+    PATCH: 'text-amber-700 bg-amber-100/80 border-amber-200',
+    DELETE: 'text-rose-700 bg-rose-100/80 border-rose-200',
   }
 
   return (
-    <div className="relative flex items-start select-none">
+    <div className="relative flex items-start select-none group">
       <div
         onClick={onClick}
+        style={{ width: API_NODE_WIDTH }}
         className={`
-          w-64 rounded-xl border-2 bg-white shadow-sm transition-all cursor-pointer
-          ${isActive ? 'border-purple-500 ring-4 ring-purple-500/20' : 'border-gray-200 hover:border-gray-300'}
+          rounded-2xl bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.05)]
+          border transition-all duration-200 cursor-pointer overflow-hidden
+          hover:shadow-[0_16px_32px_-6px_rgba(0,0,0,0.15)]
+          ${isActive ? 'border-sky-500 ring-4 ring-sky-500/20 shadow-[0_0_25px_rgba(14,165,233,0.25)]' : 'border-slate-200/90 hover:border-slate-300'}
         `}
       >
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50/50 px-3 py-2 rounded-t-xl">
-          <Network className="h-4 w-4 text-purple-500" />
-          <span className="text-xs font-semibold text-gray-700">API Request</span>
+        <div 
+          className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-3.5"
+          style={{ height: API_NODE_HEADER_H }}
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-50 border border-sky-100/80 text-sky-600 shadow-xs">
+              <Network className="h-3 w-3" />
+            </div>
+            <span className="text-xs font-bold text-slate-800 tracking-tight">API Request</span>
+          </div>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${methodColors[data.method] || methodColors.GET}`}>
+            {data.method}
+          </span>
         </div>
 
         {/* Body */}
-        <div className="p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${methodColors[data.method] || methodColors.GET}`}>
-              {data.method}
-            </span>
-            <span className="text-sm font-medium text-gray-800 truncate">
+        <div className="p-3" style={{ minHeight: API_NODE_BODY_H }}>
+          <div className="w-full rounded-xl bg-slate-50/90 border border-slate-100/90 p-2.5">
+            <p className="text-xs font-semibold text-slate-800 truncate mb-0.5">
               {data.name || "Untitled API"}
-            </span>
+            </p>
+            <p className="text-[11px] font-mono text-slate-500 truncate">
+              {data.url || "https://api.example.com/v1/..."}
+            </p>
           </div>
-          <p className="text-xs text-gray-500 truncate">
-            {data.url || "No URL provided"}
-          </p>
         </div>
       </div>
 
@@ -92,16 +103,18 @@ export default function ApiNode({
         onMouseDown={onPortMouseDown ?? ((e) => e.preventDefault())}
         onClick={onPortClick ?? ((e) => e.preventDefault())}
         handleId="success"
+        color="sky"
       />
 
-      {/* Failure Path Port (rendered lower if enabled) */}
+      {/* Failure Path Port (if enabled) */}
       {data.failurePath && (
         <ConnectorHandle
           handleId="fail"
-          topOffset={API_NODE_HEADER_H + API_NODE_BODY_H + 20} // Just placing it below the main one
+          topOffset={API_NODE_HEADER_H + API_NODE_BODY_H + 16}
           connected={connectedHandles.has('fail')}
           onMouseDown={onPortMouseDown ?? ((e) => e.preventDefault())}
           onClick={onPortClick ?? ((e) => e.preventDefault())}
+          color="rose"
         />
       )}
     </div>
