@@ -6,8 +6,12 @@ import { createClient } from '@supabase/supabase-js'
 // runtime never throws "supabaseKey is required".
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = 'https://zuvtokjidnqbnzqnbvxp.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1dnRva2ppZG5xYm56cW5idnhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzNDM0MzEsImV4cCI6MjA5NjkxOTQzMX0.Zc6Bg3XTi5Y4v9Q9-iI6LJtetDk_yqAkf0OSwRVb3rI'
+const SUPABASE_URL = 'https://uxihntppwtdhuxoiyfnx.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4aWhudHBwd3RkaHV4b2l5Zm54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyODE5NDgsImV4cCI6MjExMDg1Nzk0OH0.24MwtqjUMSfYDkYX-00ZmM_X0k1CPELK0nwC4RXoMrA'
+
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || SUPABASE_URL
+const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY
 
 /**
  * Server-side Supabase client for use inside Next.js API routes (/api/**).
@@ -16,8 +20,8 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
  * a service role key would be needed instead.
  */
 export const supabaseServer = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY,
+  supabaseUrl,
+  supabaseAnonKey,
   { auth: { persistSession: false } }
 )
 
@@ -26,9 +30,7 @@ export const supabaseServer = createClient(
  * Falls back to the anon key if no separate readonly key is configured.
  */
 export const supabaseReadOnly = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL,
-  process.env.SUPABASE_READONLY_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    SUPABASE_ANON_KEY,
+  supabaseUrl,
+  process.env.SUPABASE_READONLY_KEY || supabaseAnonKey,
   { auth: { persistSession: false } }
 )

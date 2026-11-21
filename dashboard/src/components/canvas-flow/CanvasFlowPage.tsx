@@ -124,6 +124,7 @@ function CanvasFlowPageInner() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [isWorkflowsOpen, setIsWorkflowsOpen] = useState(true)
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false)
 
   /** Picker modals */
   const [playbookPickerPos, setPlaybookPickerPos] = useState<{
@@ -1438,25 +1439,35 @@ function CanvasFlowPageInner() {
                   handleDismiss()
                 }}
                 onCreateNew={async () => {
-                  const now = new Date().toISOString()
-                  const newId = generateAgentId()
-                  const newAgent = {
-                    id: newId,
-                    title: "Untitled Agent",
-                    model: "gpt-4o-mini" as const,
-                    credentialId: null,
-                    instructions: "",
-                    tools: createDefaultTools(),
-                    knowledgeBase: { isConfigured: false, documents: [] },
-                    exitConditions: [],
-                    createdAt: now,
-                    updatedAt: now,
-                    status: "draft" as const,
+                  setIsCreatingAgent(true)
+                  try {
+                    const now = new Date().toISOString()
+                    const newId = generateAgentId()
+                    const newAgent: AgentConfig = {
+                      id: newId,
+                      title: "Untitled Agent",
+                      model: "gpt-4o-mini" as const,
+                      credentialId: null,
+                      instructions: "",
+                      tools: createDefaultTools(),
+                      knowledgeBase: { isConfigured: false, documents: [] },
+                      exitConditions: [],
+                      createdAt: now,
+                      updatedAt: now,
+                      status: "draft" as const,
+                    }
+                    createAgent(newAgent)
+                    persistAgent(newAgent).catch((err) => {
+                      console.warn("[agentStore] Background persist warning:", err)
+                    })
+                    await handleAgentPick(newId)
+                  } catch (err) {
+                    console.error("[CanvasFlow] Failed to create new agent:", err)
+                  } finally {
+                    setIsCreatingAgent(false)
                   }
-                  await persistAgent(newAgent)
-                  createAgent({ id: newId, title: "Untitled Agent" })
-                  handleAgentPick(newId)
                 }}
+                isCreating={isCreatingAgent}
               />
             </div>
           )}
@@ -2091,11 +2102,13 @@ function AgentPickerModal({
   onPick,
   onClose,
   onCreateNew,
+  isCreating = false,
 }: {
   agents: AgentConfig[]
   onPick: (agentId: string) => void
   onClose: () => void
   onCreateNew: () => void
+  isCreating?: boolean
 }) {
   return (
     <div className="w-64 rounded-2xl bg-[#0f121a]/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden">
@@ -2142,10 +2155,15 @@ function AgentPickerModal({
       <div className="border-t border-white/8 p-2">
         <button
           onClick={onCreateNew}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-blue-500/30 py-2 text-xs font-medium text-blue-400 transition hover:border-blue-500/60 hover:bg-blue-500/10"
+          disabled={isCreating}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-blue-500/30 py-2 text-xs font-medium text-blue-400 transition hover:border-blue-500/60 hover:bg-blue-500/10 disabled:opacity-50"
         >
-          <Plus className="h-3 w-3" />
-          Create new agent
+          {isCreating ? (
+            <RefreshCw className="h-3 w-3 animate-spin" />
+          ) : (
+            <Plus className="h-3 w-3" />
+          )}
+          <span>{isCreating ? "Creating agent..." : "Create new agent"}</span>
         </button>
       </div>
     </div>

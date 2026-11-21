@@ -24,7 +24,7 @@ export function SnippetViewer() {
     v.onload = function() {
       window.initAIChatbot({
         host: "${host}",
-        projectId: "zuvtokjidnqbnzqnbvxp"
+        projectId: "uxihntppwtdhuxoiyfnx"
       });
     };
     v.src = "${host}/widget-loader.js";
