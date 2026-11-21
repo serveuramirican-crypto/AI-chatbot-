@@ -139,7 +139,7 @@ const DEFAULT_TRIGGER: Record<SystemToolId, string> = Object.fromEntries(
 const INSTRUCTION_PRESETS: { label: string; instructions: string }[] = [
   {
     label: 'Customer Support',
-    instructions: `You are a friendly and professional customer support agent.\n\nYour responsibilities:\n- Answer questions about products and services\n- Process refunds and complaints empathetically\n- Escalate complex issues to human agents\n- Always confirm you\u2019ve resolved the issue before ending\n\nBe concise, empathetic, and solution-focused.`,
+    instructions: `You are a friendly and professional customer support agent.\n\nYour responsibilities:\n- Answer questions about products and services accurately\n- Process refunds and complaints empathetically\n- Escalate complex issues to human agents\n- Always confirm you have resolved the user's issue before ending\n\nBe concise, empathetic, and solution-focused.`,
   },
   {
     label: 'Appointment Booking',
@@ -147,11 +147,11 @@ const INSTRUCTION_PRESETS: { label: string; instructions: string }[] = [
   },
   {
     label: 'Info Collector',
-    instructions: `You are a data collection assistant.\n\nYour responsibilities:\n- Collect specific information from the user as instructed\n- Ask one question at a time\n- Validate and confirm each piece of information\n- Summarize collected data at the end\n\nBe conversational and non-intrusive.`,
+    instructions: `You are a data collection assistant.\n\nYour responsibilities:\n- Collect specific information from the user systematically\n- Ask one question at a time\n- Validate and confirm each piece of information\n- Summarize collected data at the end\n\nBe conversational and non-intrusive.`,
   },
   {
     label: 'Lead Qualification',
-    instructions: `You are a sales qualification assistant.\n\nYour responsibilities:\n- Ask BANT questions: Budget, Authority, Need, Timeline\n- Determine if the prospect is a good fit\n- Schedule a follow-up call for qualified leads\n- Gracefully disengage unqualified prospects\n\nBe professional but friendly. Don\u2019t be pushy.`,
+    instructions: `You are a sales qualification assistant.\n\nYour responsibilities:\n- Ask BANT questions: Budget, Authority, Need, Timeline\n- Determine if the prospect is a good fit\n- Schedule a follow-up call for qualified leads\n- Gracefully disengage unqualified prospects\n\nBe professional, courteous, and solution-oriented. Don't be pushy.`,
   },
 ]
 
@@ -376,6 +376,109 @@ function KnowledgeBaseConfigBox({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProductsCatalogConfigBox — dedicated config for Query Products DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ProductsCatalogConfigBox({
+  agent,
+  onToolConfigChange,
+  triggerText,
+  onReset,
+}: {
+  agent: AgentConfig
+  onToolConfigChange: (id: string, config: Record<string, unknown>) => void
+  triggerText: string
+  onReset: () => void
+}) {
+  const tool = agent.tools.find((t) => t.id === 'query_products_db')
+  const config = tool?.config ?? {}
+  const [productCount, setProductCount] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    async function checkProducts() {
+      setLoading(true)
+      try {
+        const { count, error } = await supabase
+          .from('products')
+          .select('*', { count: 'exact', head: true })
+        if (!error && count !== null) {
+          setProductCount(count)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
+    }
+    checkProducts()
+  }, [])
+
+  const searchMode = (config.searchMode as string) ?? 'hybrid'
+  const maxResults = (config.maxResults as number) ?? 5
+
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      <TriggerBox text={triggerText} onReset={onReset} />
+
+      <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm" />
+          <span className="text-xs font-medium text-gray-700">
+            {loading
+              ? 'Checking catalog...'
+              : productCount !== null
+                ? `${productCount} active products in catalog`
+                : 'Product catalog connected'}
+          </span>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+          Live
+        </span>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Search Mode
+        </label>
+        <select
+          value={searchMode}
+          onChange={(e) =>
+            onToolConfigChange('query_products_db', { ...config, searchMode: e.target.value })
+          }
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-300"
+        >
+          <option value="hybrid">Hybrid (Semantic + Keywords)</option>
+          <option value="semantic">Semantic AI Embeddings</option>
+          <option value="exact">Exact Title & SKU Match</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Max Products Returned
+        </label>
+        <select
+          value={maxResults}
+          onChange={(e) =>
+            onToolConfigChange('query_products_db', { ...config, maxResults: Number(e.target.value) })
+          }
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-blue-300"
+        >
+          <option value={3}>Top 3 products</option>
+          <option value={5}>Top 5 products (Recommended)</option>
+          <option value={10}>Top 10 products</option>
+        </select>
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs text-blue-800 leading-relaxed">
+        When triggered, the agent automatically queries your Supabase products database and formats matches into interactive product cards or details.
       </div>
     </div>
   )
@@ -640,6 +743,18 @@ function CapabilityConfigBox({
     )
   }
 
+  // ── Query Products DB ───────────────────────────────────────────────────
+  if (toolId === 'query_products_db') {
+    return (
+      <ProductsCatalogConfigBox
+        agent={agent}
+        onToolConfigChange={onToolConfigChange}
+        triggerText={triggerText}
+        onReset={onReset}
+      />
+    )
+  }
+
   // ── Response Example ────────────────────────────────────────────────────
   if (toolId === 'response_example') {
     const pairs = (agent.response_examples as { question: string, answer: string, buttons?: string[] }[]) ?? []
@@ -835,7 +950,7 @@ function CapabilityConfigBox({
                   rows={2}
                   value={msg.content || ''}
                   onChange={(e) => editMessageContent(idx, e.target.value)}
-                  placeholder={`Message ${idx + 1}\u2026`}
+                  placeholder={`Message ${idx + 1}...`}
                   className="w-full resize-none rounded-md border border-white/50 bg-white/60 px-2.5 py-1.5 text-xs text-gray-800 outline-none focus:border-blue-300 focus:bg-white focus:ring-1 focus:ring-blue-300/20"
                 />
               </div>
@@ -911,7 +1026,7 @@ function ApiKeyField({
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
-            placeholder="sk-\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+            placeholder="sk-••••••••••••••••"
             className="w-40 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 pr-8 text-xs text-gray-800 outline-none ring-2 ring-blue-500/20"
           />
           <button onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -954,7 +1069,7 @@ function ExitConditionRow({
           type="text"
           value={condition.description}
           onChange={(e) => onChange({ ...condition, description: e.target.value })}
-          placeholder="e.g. If user asks about billing\u2026"
+          placeholder="e.g. If user asks about billing or cancel..."
           className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-800 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-300/20"
         />
         <div className="flex items-center gap-2">
@@ -996,6 +1111,8 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
 
   const [showPresets, setShowPresets] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   /**
    * Which capability is currently selected/open in the config box.
    * null = none — shows the placeholder.
@@ -1077,8 +1194,8 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
     if (!agent) return
     const credId = `cred_${agent.id}`
     const masked = rawKey.length > 8
-      ? rawKey.slice(0, 3) + '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + rawKey.slice(-4)
-      : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'
+      ? rawKey.slice(0, 3) + '••••••••' + rawKey.slice(-4)
+      : '••••••••'
     upsertCredential({ id: credId, agentId: agent.id, provider: agent.model, maskedKey: masked, createdAt: new Date().toISOString() })
     // Also store the raw key transiently in agent state so persistAgent can write it to Supabase
     updateAgent(agent.id, { credentialId: credId, apiKey: rawKey })
@@ -1135,19 +1252,36 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
           <button
             onClick={async () => {
               setIsSaving(true)
+              setSaveError(null)
               try {
                 await persistAgent(agent)
-              } catch (err) {
+                setSaveSuccess(true)
+                setTimeout(() => setSaveSuccess(false), 2500)
+              } catch (err: any) {
                 console.error("Failed to save agent:", err)
+                setSaveError(err?.message || "Failed to save")
+                setTimeout(() => setSaveError(null), 4000)
               } finally {
-                setTimeout(() => setIsSaving(false), 500)
+                setIsSaving(false)
               }
             }}
             disabled={isSaving}
-            className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 transition hover:bg-gray-200 disabled:opacity-50"
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition shadow-xs ${
+              saveSuccess
+                ? 'bg-emerald-600 text-white'
+                : saveError
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-50'
+            }`}
           >
-            {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            Save Settings
+            {isSaving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : saveSuccess ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+            {isSaving ? 'Saving...' : saveSuccess ? 'Saved!' : saveError ? 'Failed to save' : 'Save Settings'}
           </button>
 
           <button
@@ -1227,7 +1361,7 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
           <textarea
             value={agent.instructions}
             onChange={(e) => patch({ instructions: e.target.value })}
-            placeholder="You are a helpful assistant that\u2026"
+            placeholder="You are a helpful assistant that assists customers with..."
             className="flex-1 min-h-64 resize-none rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-300/20"
             style={{ fontFamily: 'ui-monospace, monospace', fontSize: '13px' }}
           />
@@ -1475,7 +1609,7 @@ export default function AgentStudio({ apiNodes = [] }: { apiNodes?: ApiNodeData[
         </div>
         {agent.exitConditions.length === 0 ? (
           <p className="text-xs italic text-gray-400">
-            No exit conditions yet \u2014 add one to enable hand-offs to other agents.
+            No exit conditions yet — add one to enable hand-offs to other agents.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">

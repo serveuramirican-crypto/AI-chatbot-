@@ -62,7 +62,7 @@ export default function AgentNode({
   const agent       = useAgent(agentId)
   const agentList    = useAgentList()
   const bootstrapped = useAgentBootstrapped()
-  const { openStudio } = useAgentActions()
+  const { openStudio, createAgent } = useAgentActions()
 
   const [pickerOpen, setPickerOpen]   = useState(false)
   const pickerRef                     = useRef<HTMLDivElement>(null)
@@ -87,63 +87,57 @@ export default function AgentNode({
       <div className="relative flex items-start select-none" ref={pickerRef}>
         <div
           onClick={(e) => { e.stopPropagation(); onClick?.(e) }}
+          style={{ width: AG_NODE_WIDTH }}
           className={`
-            w-64 rounded-xl border-2 bg-white shadow-sm transition-all cursor-pointer
+            rounded-2xl bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.05)]
+            border transition-all duration-200 cursor-pointer overflow-hidden
             ${isActive
-              ? 'border-amber-400 ring-4 ring-amber-400/20'
+              ? 'border-amber-500 ring-4 ring-amber-500/20 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
               : 'border-amber-200 hover:border-amber-400'}
           `}
         >
           {/* Warning header */}
           <div
-            className="flex items-center gap-2 border-b border-amber-100 px-3 rounded-t-xl"
-            style={{
-              height: AG_NODE_HEADER_H,
-              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-            }}
+            className="flex items-center gap-2 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-amber-100/60 px-3.5"
+            style={{ height: AG_NODE_HEADER_H }}
           >
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-400">
-              <Bot className="h-3 w-3 text-white" />
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-amber-500 text-white shadow-xs">
+              <Bot className="h-3 w-3" />
             </div>
-            <span className="flex-1 truncate text-xs font-semibold text-amber-900">
+            <span className="flex-1 truncate text-xs font-bold text-amber-950 tracking-tight">
               AI Agent
             </span>
             {isLoading ? (
-              <Loader2 className="h-3.5 w-3.5 text-amber-400 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin" />
             ) : (
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
             )}
             {onDelete && (
               <button
                 title="Remove Agent Node"
                 onClick={(e) => { e.stopPropagation(); onDelete(_id) }}
-                className="ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-amber-500 hover:bg-amber-200 hover:text-amber-700 transition"
+                className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-amber-600 hover:bg-amber-200 hover:text-amber-800 transition"
               >
-                <X className="h-3 w-3" />
+                <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
 
           {/* Picker body */}
           <div
-            className="flex flex-col items-center justify-center gap-1.5 px-3"
-            style={{ height: AG_NODE_BODY_H }}
+            className="flex flex-col items-center justify-center gap-1.5 px-3 py-2"
+            style={{ minHeight: AG_NODE_BODY_H }}
           >
             {isLoading ? (
-              <span className="text-[11px] text-amber-600 italic">Loading agents…</span>
+              <span className="text-[11px] text-amber-600 italic">Loading agents...</span>
             ) : (
-              <>
-                <span className="text-[11px] font-medium text-amber-700">
-                  No agent selected
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setPickerOpen(v => !v) }}
-                  className="flex w-full items-center justify-between gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 transition hover:bg-amber-100 hover:border-amber-400 active:scale-95"
-                >
-                  <span>Select an Agent</span>
-                  <ChevronDown className={`h-3 w-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPickerOpen(v => !v) }}
+                className="flex w-full items-center justify-between gap-1.5 rounded-xl border border-amber-300 bg-amber-50/80 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 hover:border-amber-400 active:scale-95 shadow-xs"
+              >
+                <span>Select an Agent</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+              </button>
             )}
           </div>
         </div>
@@ -151,7 +145,7 @@ export default function AgentNode({
         {/* Dropdown list */}
         {pickerOpen && (
           <div
-            className="absolute left-0 z-50 mt-1 w-64 rounded-xl border border-amber-200 bg-white shadow-2xl overflow-hidden"
+            className="absolute left-0 z-50 mt-1 w-68 rounded-2xl border border-amber-200 bg-white shadow-2xl overflow-hidden divide-y divide-amber-100"
             style={{ top: AG_NODE_HEADER_H + AG_NODE_BODY_H }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -171,8 +165,8 @@ export default function AgentNode({
                       }}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition hover:bg-amber-50"
                     >
-                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500">
-                        <Bot className="h-3 w-3 text-white" />
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-500 text-white">
+                        <Bot className="h-3 w-3" />
                       </div>
                       <span className="flex-1 truncate font-medium text-gray-800">{a.title}</span>
                       <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
@@ -187,11 +181,26 @@ export default function AgentNode({
                 ))}
               </ul>
             )}
+            <div className="p-1.5 bg-amber-50/50">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const newId = createAgent({ title: 'Untitled Agent' })
+                  onAgentSelect?.(newId)
+                  setPickerOpen(false)
+                  openStudio(newId)
+                }}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition active:scale-95"
+              >
+                + Create new agent
+              </button>
+            </div>
           </div>
         )}
 
         {/* Single default output port at mid-body */}
         <ConnectorHandle
+          color="amber"
           topOffset={AG_NODE_HEADER_H + AG_NODE_BODY_H / 2}
           connected={connectedHandles.size > 0}
           onMouseDown={onPortMouseDown ?? ((e) => e.preventDefault())}
@@ -201,6 +210,7 @@ export default function AgentNode({
         {/* Left input port (target handle) */}
         <ConnectorHandle
           isTarget
+          color="amber"
           topOffset={AG_NODE_HEADER_H + AG_NODE_BODY_H / 2}
           connected={hasIncoming}
           onMouseDown={() => {}}
@@ -214,67 +224,72 @@ export default function AgentNode({
   const hasExits    = agent.exitConditions.length > 0
   const statusColor =
     agent.status === 'published'
-      ? 'bg-emerald-100 text-emerald-700'
-      : 'bg-amber-100 text-amber-700'
+      ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+      : 'bg-amber-100 text-amber-700 border border-amber-200'
 
   return (
-    <div className="relative flex items-start select-none">
+    <div className="relative flex items-start select-none group">
       {/* ── Card ──────────────────────────────────────────────────────────── */}
       <div
         onClick={onClick}
+        style={{ width: AG_NODE_WIDTH }}
         className={`
-          w-64 rounded-xl border-2 bg-white shadow-sm transition-all cursor-pointer
+          rounded-2xl bg-white shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.05)]
+          border transition-all duration-200 cursor-pointer overflow-hidden
+          hover:shadow-[0_16px_32px_-6px_rgba(0,0,0,0.15)]
           ${isActive
-            ? 'border-blue-500 ring-4 ring-blue-500/20'
-            : 'border-blue-200 hover:border-blue-400'}
+            ? 'border-blue-500 ring-4 ring-blue-500/20 shadow-[0_0_25px_rgba(59,130,246,0.25)]'
+            : 'border-slate-200/90 hover:border-blue-300'}
         `}
       >
         {/* Header */}
         <div
-          className="flex items-center gap-2 border-b border-blue-100 px-3 rounded-t-xl"
-          style={{
-            height: AG_NODE_HEADER_H,
-            background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
-          }}
+          className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-blue-50/70 to-indigo-50/50 px-3.5"
+          style={{ height: AG_NODE_HEADER_H }}
         >
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500">
-            <Bot className="h-3 w-3 text-white" />
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue-600 text-white shadow-xs">
+              <Bot className="h-3 w-3" />
+            </div>
+            <span className="truncate text-xs font-bold text-slate-800 tracking-tight">
+              {agent.title || 'Untitled Agent'}
+            </span>
           </div>
-          <span className="flex-1 truncate text-xs font-semibold text-blue-900">
-            {agent.title}
-          </span>
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${statusColor}`}
-          >
-            {agent.status}
-          </span>
 
-          {/* Swap agent button */}
-          {onAgentSelect && (
-            <button
-              title="Change agent"
-              onClick={(e) => { e.stopPropagation(); setPickerOpen(v => !v) }}
-              className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-blue-400 hover:text-blue-600 transition"
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span
+              className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusColor}`}
             >
-              <ChevronDown className={`h-3 w-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
+              {agent.status}
+            </span>
 
-          {/* Delete node button */}
-          {onDelete && (
-            <button
-              title="Remove Agent Node"
-              onClick={(e) => { e.stopPropagation(); onDelete(_id) }}
-              className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-blue-400 hover:bg-blue-200 hover:text-blue-700 transition"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+            {/* Swap agent button */}
+            {onAgentSelect && (
+              <button
+                title="Change agent"
+                onClick={(e) => { e.stopPropagation(); setPickerOpen(v => !v) }}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <ChevronDown className={`h-3 w-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+              </button>
+            )}
+
+            {/* Delete node button */}
+            {onDelete && (
+              <button
+                title="Remove Agent Node"
+                onClick={(e) => { e.stopPropagation(); onDelete(_id) }}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Body — Edit Agent button */}
         <div
-          className="flex items-center justify-center px-3"
+          className="p-3 flex items-center"
           style={{ height: AG_NODE_BODY_H }}
         >
           <button
@@ -282,23 +297,23 @@ export default function AgentNode({
               e.stopPropagation()
               openStudio(agentId)
             }}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100 hover:border-blue-300 active:scale-95"
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/80 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-300 active:scale-98 shadow-xs"
           >
-            <Pencil className="h-3 w-3" />
+            <Pencil className="h-3.5 w-3.5 text-blue-600" />
             Edit Agent
           </button>
         </div>
 
         {/* Exit conditions list */}
         {hasExits && (
-          <div className="flex flex-col gap-1 px-3 pb-2">
+          <div className="flex flex-col gap-1.5 px-3 pb-3">
             {agent.exitConditions.map((ec) => (
               <div
                 key={ec.id}
-                className="relative flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700"
+                className="relative flex items-center rounded-xl border border-blue-100 bg-slate-50/80 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs"
                 style={{ height: AG_EXIT_ROW_H }}
               >
-                <span className="flex-1 truncate">{ec.description}</span>
+                <span className="flex-1 truncate">{ec.description || 'Exit rule'}</span>
               </div>
             ))}
           </div>
@@ -309,7 +324,7 @@ export default function AgentNode({
       {pickerOpen && onAgentSelect && (
         <div
           ref={pickerRef}
-          className="absolute left-0 z-50 mt-1 w-64 rounded-xl border border-blue-200 bg-white shadow-2xl overflow-hidden"
+          className="absolute left-0 z-50 mt-1 w-68 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden divide-y divide-slate-100"
           style={{ top: AG_NODE_HEADER_H + AG_NODE_BODY_H }}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -322,15 +337,14 @@ export default function AgentNode({
                     onAgentSelect(a.id)
                     setPickerOpen(false)
                   }}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition hover:bg-blue-50"
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition hover:bg-blue-50/60"
                 >
-                  {a.id === agentId && (
-                    <Check className="h-3 w-3 text-blue-500 shrink-0" />
+                  {a.id === agentId ? (
+                    <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                  ) : (
+                    <div className="h-3.5 w-3.5 shrink-0" />
                   )}
-                  {a.id !== agentId && (
-                    <div className="h-3 w-3 shrink-0" />
-                  )}
-                  <span className="flex-1 truncate font-medium text-gray-800">{a.title}</span>
+                  <span className="flex-1 truncate font-medium text-slate-800">{a.title}</span>
                   <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
                     a.status === 'published'
                       ? 'bg-emerald-100 text-emerald-700'
@@ -342,6 +356,20 @@ export default function AgentNode({
               </li>
             ))}
           </ul>
+          <div className="p-1.5 bg-slate-50">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const newId = createAgent({ title: 'Untitled Agent' })
+                onAgentSelect(newId)
+                setPickerOpen(false)
+                openStudio(newId)
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition active:scale-95"
+            >
+              + Create new agent
+            </button>
+          </div>
         </div>
       )}
 
@@ -359,6 +387,7 @@ export default function AgentNode({
               key={ec.id}
               handleId={ec.id}
               topOffset={topPx}
+              color="blue"
               connected={connectedHandles.has(ec.id)}
               onMouseDown={onPortMouseDown ?? ((e) => e.preventDefault())}
               onClick={onPortClick ?? ((e) => e.preventDefault())}
@@ -369,6 +398,7 @@ export default function AgentNode({
         // No exit conditions: single default output port at mid-body
         <ConnectorHandle
           topOffset={AG_NODE_HEADER_H + AG_NODE_BODY_H / 2}
+          color="blue"
           connected={connectedHandles.size > 0}
           onMouseDown={onPortMouseDown ?? ((e) => e.preventDefault())}
           onClick={onPortClick ?? ((e) => e.preventDefault())}
@@ -378,6 +408,7 @@ export default function AgentNode({
       {/* Left input port (target handle) */}
       <ConnectorHandle
         isTarget
+        color="blue"
         topOffset={AG_NODE_HEADER_H + AG_NODE_BODY_H / 2}
         connected={hasIncoming}
         onMouseDown={() => {}}

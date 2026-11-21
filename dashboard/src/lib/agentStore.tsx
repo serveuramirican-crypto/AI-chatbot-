@@ -246,13 +246,16 @@ export function useAgentList(): AgentConfig[] {
  * Handles column name differences: model_id → model, exit_conditions → exitConditions, etc.
  */
 export function rowToAgentConfig(row: Record<string, unknown>): AgentConfig {
+  const agentId = row.id as string
+  const hasKey = typeof row.api_key === 'string' && row.api_key.trim().length > 0
+
   return {
-    id: row.id as string,
+    id: agentId,
     title: (row.title as string) ?? 'Untitled Agent',
     model: (row.model_id as AgentConfig['model']) ?? 'gpt-4o-mini',
     customModelId: (row.custom_model_id as string | undefined) ?? undefined,
-    credentialId: null, // API key lives server-side only (raw key never in client state)
-    apiKey: (row.api_key as string | undefined) ?? undefined, // transient — used by persistAgent only
+    credentialId: hasKey ? `cred_${agentId}` : null,
+    apiKey: (row.api_key as string | undefined) ?? undefined,
     instructions: (row.instructions as string) ?? '',
     tools: Array.isArray(row.tools) ? (row.tools as AgentConfig['tools']) : createDefaultTools(),
     knowledgeBase: (row.knowledge_base as AgentConfig['knowledgeBase']) ?? { isConfigured: false, documents: [] },
@@ -425,7 +428,26 @@ export function useAgentBootstrap() {
         return
       }
 
-      const configs = (data ?? []).map(row => rowToAgentConfig(row as Record<string, unknown>))
+      const configs = (data ?? []).map(row => {
+        const cfg = rowToAgentConfig(row as Record<string, unknown>)
+        if (cfg.apiKey && cfg.credentialId) {
+          const rawKey = cfg.apiKey
+          const masked = rawKey.length > 8
+            ? rawKey.slice(0, 3) + '••••••••' + rawKey.slice(-4)
+            : '••••••••'
+          dispatch({
+            type: 'UPSERT_CREDENTIAL',
+            payload: {
+              id: cfg.credentialId,
+              agentId: cfg.id,
+              provider: cfg.model,
+              maskedKey: masked,
+              createdAt: cfg.createdAt,
+            },
+          })
+        }
+        return cfg
+      })
       if (configs.length > 0) {
         dispatch({ type: 'LOAD_AGENTS', payload: configs })
         console.log(`[agentStore] Bootstrapped ${configs.length} agent(s) from Supabase.`)
