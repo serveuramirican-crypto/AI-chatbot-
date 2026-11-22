@@ -10,6 +10,8 @@ import {
   ProductItem,
 } from '@/lib/workflowHelpers';
 import { rowToAgentConfig } from '@/lib/agentStore';
+import type { SetNodeData, VariableAssignment, TranscriptPropertyAssignment } from '@/types/setNode';
+import { interpolateVariables, persistExecutionVariables, updateSessionTranscriptMetadata } from '@/lib/setStore';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface ChatMessage {
@@ -597,6 +599,95 @@ export function useWorkflowExecutor(projectId: string | null) {
           node = nextNode;
           continue;
         }
+      }
+
+      // ── Set Node Handling ──────────────────────────────────────────────────
+      if (node.type === "set") {
+        const setConfig = (node as unknown as SetNodeData).config || { assignments: [], transcriptProperties: [], parallelExecution: false };
+        const assignments: VariableAssignment[] = setConfig.assignments || [];
+        const properties: TranscriptPropertyAssignment[] = setConfig.transcriptProperties || [];
+        const isParallel = Boolean(setConfig.parallelExecution);
+
+        const executeAssignment = async (assign: VariableAssignment): Promise<{ varName: string; val: any } | null> => {
+          const varName = assign.label || "variable";
+          if (!assign.variableID && !assign.label) return null;
+
+          if (assign.type === "value") {
+            const rawVal = assign.value ?? "";
+            let resolvedVal: any = interpolateVariables(rawVal, globalVariablesRef.current);
+            if (/^-?\d+(\.\d+)?$/.test(resolvedVal.trim())) {
+              resolvedVal = Number(resolvedVal.trim());
+            }
+            return { varName, val: resolvedVal };
+          } else if (assign.type === "prompt") {
+            try {
+              const res = await fetch("/api/chat/prompt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  promptId: assign.promptID,
+                  context: globalContextRef.current.join("\n"),
+                  variables: globalVariablesRef.current,
+                }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                return { varName, val: data.result ?? "" };
+              }
+            } catch (err) {
+              console.error("[useWorkflowExecutor] Set Prompt error:", err);
+            }
+          }
+          return null;
+        };
+
+        if (isParallel) {
+          const results = await Promise.all(assignments.map(executeAssignment));
+          for (const res of results) {
+            if (res) globalVariablesRef.current[res.varName] = String(res.val);
+          }
+        } else {
+          for (const assign of assignments) {
+            const res = await executeAssignment(assign);
+            if (res) globalVariablesRef.current[res.varName] = String(res.val);
+          }
+        }
+
+        // Apply Transcript Properties
+        if (properties.length > 0) {
+          const propUpdates: { name: string; value: any; operation: "replace" | "append" }[] = [];
+          for (const prop of properties) {
+            const propName = prop.label || "property";
+            const resolvedPropVal = interpolateVariables(prop.value || "", globalVariablesRef.current);
+            propUpdates.push({
+              name: propName,
+              value: resolvedPropVal,
+              operation: prop.operationType || "replace",
+            });
+          }
+
+          const sId = agentSessionIdRef.current || dbSessionIdRef.current;
+          if (sId) {
+            await updateSessionTranscriptMetadata(sId, propUpdates);
+          }
+        }
+
+        const currentSessionId = agentSessionIdRef.current || dbSessionIdRef.current;
+        if (currentSessionId) {
+          await persistExecutionVariables(currentSessionId, globalVariablesRef.current);
+        }
+
+        await sleep(250);
+        let { node: nextNode, deadEnd } = findNextNode(node.id, "next");
+        if (!nextNode) {
+          const fallback = findNextNode(node.id);
+          nextNode = fallback.node;
+          deadEnd = fallback.deadEnd;
+        }
+
+        if (deadEnd || !nextNode) break;
+        node = nextNode;
+        continue;
       }
 
       // Auto-advance

@@ -5,6 +5,7 @@ import {
   BookOpen,
   Users,
   Bot,
+  Sliders,
   MessageSquare,
   Search,
   ChevronLeft,
@@ -76,7 +77,15 @@ const sections: LibrarySection[] = [
   {
     title: "Logic & Flow",
     accentColor: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    items: [],
+    items: [
+      {
+        icon: <Sliders className="h-3.5 w-3.5 text-amber-400" />,
+        label: "Set",
+        color: "group-hover:text-amber-300",
+        dragType: "set",
+        description: "Assign or update workflow variables and conversation properties",
+      },
+    ],
   },
 ]
 

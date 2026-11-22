@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Bot,
   FileCode,
+  Sliders,
   MessageSquare,
   CreditCard,
   LayoutGrid,
@@ -44,6 +45,13 @@ const actions: ActionItem[] = [
       { icon: <CreditCard className="h-4 w-4 text-emerald-400" />, label: "Cards" },
       { icon: <MousePointerClick className="h-4 w-4 text-indigo-400" />, label: "Buttons" },
       { icon: <Mic className="h-4 w-4 text-pink-400" />, label: "Listen" },
+    ],
+  },
+  {
+    icon: <Sliders className="h-4 w-4 text-amber-400" />,
+    label: "Logic & Flow",
+    children: [
+      { icon: <Sliders className="h-4 w-4 text-amber-400" />, label: "Set" },
     ],
   },
 ]

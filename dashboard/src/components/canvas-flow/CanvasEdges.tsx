@@ -196,6 +196,11 @@ export default function CanvasEdges({
             } else {
               y1 = sourceNode.position.y + MSG_DEFAULT_CENTER_Y;
             }
+          // ── set node source port ─────────────────────────────────────
+          } else if (sourceNode.type === 'set') {
+            x1 = sourceNode.position.x + 268;
+            y1 = sourceNode.position.y + 38 + 34;
+            edgeLabel = 'Next';
           // ── carousel node source port ─────────────────────────────────
           } else if (sourceNode.type === 'carousel') {
             x1 = sourceNode.position.x + 268;
@@ -234,6 +239,9 @@ export default function CanvasEdges({
         } else if (targetNode.type === 'carousel') {
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + 50;
+        } else if (targetNode.type === 'set') {
+          x2 = targetNode.position.x;
+          y2 = targetNode.position.y + 38 + 34;
         } else {
           x2 = targetNode.position.x;
           y2 = targetNode.position.y + MSG_DEFAULT_CENTER_Y;

@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { MessageNodeData } from "./MessageNode";
 import { ApiNodeData } from "./ApiNode";
+import type { SetNodeData, VariableAssignment, TranscriptPropertyAssignment } from "@/types/setNode";
+import { interpolateVariables, persistExecutionVariables, updateSessionTranscriptMetadata } from "@/lib/setStore";
 import type { AgentConfig } from "@/types/agent";
 import { useChatTheme } from "./ChatDesignPanel";
 import { supabase } from "@/lib/supabase";
@@ -1032,6 +1034,122 @@ export default function RunModal({
 
         await sleep(300);
         const { node: nextNode, deadEnd } = findNextNode(node.id, undefined);
+        if (deadEnd || !nextNode) break;
+        node = nextNode;
+        continue;
+      }
+
+      // ── Set node handling ─────────────────────────────────────────
+      if (node.type === "set") {
+        const setConfig = (node as unknown as SetNodeData).config || { assignments: [], transcriptProperties: [], parallelExecution: false };
+        const assignments: VariableAssignment[] = setConfig.assignments || [];
+        const properties: TranscriptPropertyAssignment[] = setConfig.transcriptProperties || [];
+        const isParallel = Boolean(setConfig.parallelExecution);
+
+        addLog("info", `[Set Node] Executing Set (${assignments.length} variable assignments, ${properties.length} transcript properties, Mode: ${isParallel ? "Parallel" : "Sequential"})`);
+        const startTime = performance.now();
+
+        // Execution helper for a single variable assignment
+        const executeAssignment = async (assign: VariableAssignment): Promise<{ varName: string; val: any } | null> => {
+          const varName = assign.label || "variable";
+          if (!assign.variableID && !assign.label) {
+            addLog("warn", `[Set Node] Assignment ${assign.id} has no target variable — skipping.`);
+            return null;
+          }
+
+          if (assign.type === "value") {
+            const rawVal = assign.value ?? "";
+            let resolvedVal: any = interpolateVariables(rawVal, globalVariablesRef.current);
+            // Numeric literal preservation: if string matches integer or decimal, parse as number
+            if (/^-?\d+(\.\d+)?$/.test(resolvedVal.trim())) {
+              resolvedVal = Number(resolvedVal.trim());
+            }
+            addLog("log", `[Set Node] Variable "${varName}" = ${JSON.stringify(resolvedVal)}`);
+            return { varName, val: resolvedVal };
+          } else if (assign.type === "prompt") {
+            addLog("log", `[Set Node] Running AI Prompt for variable "${varName}"...`);
+            try {
+              const res = await fetch("/api/chat/prompt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  promptId: assign.promptID,
+                  context: globalContextRef.current.join("\n"),
+                  variables: globalVariablesRef.current,
+                }),
+              });
+
+              if (!res.ok) {
+                const errText = await res.text();
+                addLog("error", `[Set Node] Prompt AI execution failed: ${errText}`);
+                return null;
+              }
+
+              const data = await res.json();
+              const aiResult = data.result ?? "";
+              addLog("info", `[Set Node] AI result for "${varName}": "${aiResult.slice(0, 100)}${aiResult.length > 100 ? "..." : ""}"`);
+              return { varName, val: aiResult };
+            } catch (err: any) {
+              addLog("error", `[Set Node] Prompt error for "${varName}": ${err.message}`);
+              return null;
+            }
+          }
+          return null;
+        };
+
+        if (isParallel) {
+          const results = await Promise.all(assignments.map(executeAssignment));
+          for (const res of results) {
+            if (res) {
+              globalVariablesRef.current[res.varName] = String(res.val);
+            }
+          }
+        } else {
+          for (const assign of assignments) {
+            const res = await executeAssignment(assign);
+            if (res) {
+              globalVariablesRef.current[res.varName] = String(res.val);
+            }
+          }
+        }
+
+        // Apply Transcript Properties
+        if (properties.length > 0) {
+          const propUpdates: { name: string; value: any; operation: "replace" | "append" }[] = [];
+          for (const prop of properties) {
+            const propName = prop.label || "property";
+            const resolvedPropVal = interpolateVariables(prop.value || "", globalVariablesRef.current);
+            propUpdates.push({
+              name: propName,
+              value: resolvedPropVal,
+              operation: prop.operationType || "replace",
+            });
+            addLog("log", `[Set Node] Transcript property "${propName}" (${prop.operationType}): "${resolvedPropVal}"`);
+          }
+
+          if (sessionIdRef.current) {
+            await updateSessionTranscriptMetadata(sessionIdRef.current, propUpdates);
+            addLog("info", `[Set Node] Saved ${properties.length} transcript properties to session metadata`);
+          }
+        }
+
+        // Persist runtime variables to Supabase workflow_execution_variables
+        if (sessionIdRef.current) {
+          await persistExecutionVariables(sessionIdRef.current, globalVariablesRef.current);
+          addLog("log", `[Set Node] Persisted runtime variables to Supabase execution storage`);
+        }
+
+        const duration = Math.round(performance.now() - startTime);
+        addLog("info", `[Set Node] Completed Set execution in ${duration}ms ✓`);
+
+        await sleep(300);
+        let { node: nextNode, deadEnd } = findNextNode(node.id, "next");
+        if (!nextNode) {
+          const fallback = findNextNode(node.id, undefined);
+          nextNode = fallback.node;
+          deadEnd = fallback.deadEnd;
+        }
+
         if (deadEnd || !nextNode) break;
         node = nextNode;
         continue;

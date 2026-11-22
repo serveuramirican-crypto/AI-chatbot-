@@ -84,6 +84,9 @@ import {
 import ApiNode, { ApiNodeData } from "./ApiNode"
 import ApiSettingsPanel from "./ApiSettingsPanel"
 import ApiConfigModal from "./ApiConfigModal"
+import SetNode, { SET_NODE_WIDTH, SET_NODE_HEADER_H, SET_NODE_BODY_H } from "./SetNode"
+import SetSettingsPanel from "./SetSettingsPanel"
+import type { SetNodeData } from "@/types/setNode"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FlowNode =
@@ -92,6 +95,7 @@ type FlowNode =
   | AgentNodeData
   | CarouselNodeData
   | ApiNodeData
+  | SetNodeData
 
 interface Point {
   x: number
@@ -635,6 +639,33 @@ function CanvasFlowPageInner() {
         return
       }
 
+      if (actionType === "set") {
+        const newNode: SetNodeData = {
+          id: `set_${Date.now()}`,
+          type: "set",
+          label: "Set",
+          config: {
+            assignments: [],
+            transcriptProperties: [],
+            parallelExecution: false,
+          },
+          position,
+        }
+        const isFirstNode = nodesRef.current.length === 0
+        setNodes((prev) => [...prev, newNode])
+        setActiveNodeId(newNode.id)
+
+        if (isFirstNode) {
+          const autoEdge: Edge = {
+            id: generateId(),
+            from: "start",
+            to: newNode.id,
+          }
+          setEdges((prev) => [...prev, autoEdge])
+        }
+        return
+      }
+
       if (actionType === "Capture") {
         const targetNode = nodesRef.current.find((n) => {
           if (n.type !== "message") return false
@@ -913,6 +944,32 @@ function CanvasFlowPageInner() {
           asyncExecution: false,
           captureResponse: false,
           failurePath: false,
+          position: { x: toPt.x, y: toPt.y - 40 },
+        }
+        setNodes((prev) => [...prev, newNode])
+        setActiveNodeId(newNode.id)
+
+        if (dragSourceRef.current) {
+          const newEdge = {
+            id: `edge_${Date.now()}`,
+            from: dragSourceRef.current!,
+            to: newNode.id,
+            sourceHandleId: dragHandleRef.current,
+          }
+          setEdges((prev) => [...prev, newEdge])
+          dragSourceRef.current = null
+          dragHandleRef.current = undefined
+        }
+      } else if (label === "Set") {
+        const newNode: SetNodeData = {
+          id: `set_${Date.now()}`,
+          type: "set",
+          label: "Set",
+          config: {
+            assignments: [],
+            transcriptProperties: [],
+            parallelExecution: false,
+          },
           position: { x: toPt.x, y: toPt.y - 40 },
         }
         setNodes((prev) => [...prev, newNode])
@@ -1258,8 +1315,13 @@ function CanvasFlowPageInner() {
                 } else {
                   const sn = nodes.find((n) => n.id === pendingConnection.sourceId)
                   if (sn) {
-                    sx = sn.position.x + MSG_WIDTH
-                    sy = sn.position.y + (MSG_NODE_HEADER_H + MSG_NODE_BODY_H / 2)
+                    if (sn.type === "set") {
+                      sx = sn.position.x + SET_NODE_WIDTH
+                      sy = sn.position.y + SET_NODE_HEADER_H + SET_NODE_BODY_H / 2
+                    } else {
+                      sx = sn.position.x + MSG_WIDTH
+                      sy = sn.position.y + (MSG_NODE_HEADER_H + MSG_NODE_BODY_H / 2)
+                    }
                   }
                 }
                 const tx = pendingConnection.mouseX
@@ -1480,6 +1542,37 @@ function CanvasFlowPageInner() {
                       (showLine && dragSourceRef.current === node.id && !dragHandleRef.current)
                     }
                     connectedHandles={connectedHandles}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveNodeId(node.id)
+                    }}
+                    onPortMouseDown={(e, handleId) => handlePortMouseDown(e, node.id, handleId)}
+                    onPortClick={(e, handleId) => handlePortClick(e, node.id, handleId)}
+                  />
+                </div>
+              )
+            } else if (node.type === "set") {
+              const setNode = node as SetNodeData
+              const isConnectedOut = edges.some((e) => e.from === node.id)
+              const hasIncoming = edges.some((e) => e.to === node.id)
+              return (
+                <div
+                  key={node.id}
+                  className="absolute z-20 cursor-grab active:cursor-grabbing"
+                  style={{ left: node.position.x, top: node.position.y }}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
+                  onMouseUp={() => {
+                    if (isDragging.current && dragSourceRef.current) {
+                      handleConnectionEnd(node.id)
+                    }
+                  }}
+                >
+                  <SetNode
+                    data={setNode}
+                    isActive={activeNodeId === node.id}
+                    connected={isConnectedOut}
+                    hasIncoming={hasIncoming}
                     onClick={(e) => {
                       e.stopPropagation()
                       setActiveNodeId(node.id)
@@ -1999,6 +2092,22 @@ function CanvasFlowPageInner() {
                   setNodes((prev) => prev.filter((n) => n.id !== apiNode.id))
                   setEdges((prev) =>
                     prev.filter((e) => e.from !== apiNode.id && e.to !== apiNode.id)
+                  )
+                  setActiveNodeId(null)
+                }}
+              />
+            )
+          } else if (activeNode?.type === "set") {
+            const setNode = activeNode as SetNodeData
+            return (
+              <SetSettingsPanel
+                data={setNode}
+                workflowId={activeWorkflowId || undefined}
+                onChange={(updated) => handleNodeUpdate(updated)}
+                onDelete={() => {
+                  setNodes((prev) => prev.filter((n) => n.id !== setNode.id))
+                  setEdges((prev) =>
+                    prev.filter((e) => e.from !== setNode.id && e.to !== setNode.id)
                   )
                   setActiveNodeId(null)
                 }}
