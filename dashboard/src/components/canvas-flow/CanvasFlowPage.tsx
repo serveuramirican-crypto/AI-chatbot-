@@ -132,6 +132,26 @@ function CanvasFlowPageInner() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [isWorkflowsOpen, setIsWorkflowsOpen] = useState(true)
+
+  // Persist sidebar visibility preference
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("canvas_workflows_sidebar_open")
+      if (saved !== null) {
+        setIsWorkflowsOpen(saved === "true")
+      }
+    } catch {}
+  }, [])
+
+  const toggleWorkflowsOpen = useCallback((open?: boolean) => {
+    setIsWorkflowsOpen((prev) => {
+      const next = typeof open === "boolean" ? open : !prev
+      try {
+        localStorage.setItem("canvas_workflows_sidebar_open", String(next))
+      } catch {}
+      return next
+    })
+  }, [])
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
 
   /** Picker modals */
@@ -945,22 +965,31 @@ function CanvasFlowPageInner() {
           ${isWorkflowsOpen ? "w-[220px]" : "w-0 overflow-hidden border-none"}
         `}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <Workflow className="h-4 w-4 text-blue-400" />
-            <span className="text-xs font-bold tracking-tight text-white/90">Workflows</span>
-            <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.2 text-[9px] font-semibold text-blue-400">
+        <div className="flex items-center justify-between px-3.5 py-3 border-b border-white/5">
+          <div className="flex items-center gap-2 min-w-0">
+            <Workflow className="h-4 w-4 text-blue-400 shrink-0" />
+            <span className="text-xs font-bold tracking-tight text-white/90 truncate">Workflows</span>
+            <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.2 text-[9px] font-semibold text-blue-400 shrink-0">
               {workflows.length}
             </span>
           </div>
 
-          <button
-            title="Create new workflow"
-            onClick={handleCreateWorkflow}
-            className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 transition hover:bg-blue-600 hover:text-white"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              title="Create new workflow"
+              onClick={handleCreateWorkflow}
+              className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30 transition hover:bg-blue-600 hover:text-white"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              title="Hide Workflows sidebar"
+              onClick={() => toggleWorkflowsOpen(false)}
+              className="flex h-6 w-6 items-center justify-center rounded-lg text-white/40 hover:bg-white/10 hover:text-white transition"
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -1566,11 +1595,20 @@ function CanvasFlowPageInner() {
           {/* Left: Workflow Title & Status */}
           <div className="flex items-center gap-2 pointer-events-auto">
             <button
-              onClick={() => setIsWorkflowsOpen(!isWorkflowsOpen)}
-              title={isWorkflowsOpen ? "Collapse Workflows Sidebar" : "Expand Workflows Sidebar"}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0f121a]/90 backdrop-blur-xl border border-white/10 text-white/70 hover:bg-white/10 hover:text-white shadow-xl transition active:scale-95"
+              onClick={() => toggleWorkflowsOpen()}
+              title={isWorkflowsOpen ? "Hide Workflows sidebar" : "Show Workflows sidebar"}
+              className={`flex h-9 items-center justify-center rounded-xl bg-[#0f121a]/90 backdrop-blur-xl border border-white/10 text-white/70 hover:bg-white/10 hover:text-white shadow-xl transition active:scale-95 ${
+                !isWorkflowsOpen ? "px-3 gap-2 text-white" : "w-9"
+              }`}
             >
-              {isWorkflowsOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              {isWorkflowsOpen ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <>
+                  <PanelLeftOpen className="h-4 w-4 text-blue-400" />
+                  <span className="text-xs font-semibold">Workflows</span>
+                </>
+              )}
             </button>
 
             <div className="flex items-center gap-2.5 rounded-xl bg-[#0f121a]/90 backdrop-blur-xl border border-white/10 px-3 py-1.5 shadow-xl">
