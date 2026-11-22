@@ -31,6 +31,9 @@ import {
   Layers,
   ArrowRight,
   ExternalLink,
+  Save,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react"
 import StartNode from "./StartNode"
 import ActionsDropdown from "./ActionsDropdown"
@@ -70,6 +73,8 @@ import {
   listWorkflows,
   loadWorkflow,
   createWorkflow,
+  duplicateWorkflow,
+  saveWorkflow,
   deleteWorkflow,
   renameWorkflow,
   useWorkflowPersistence,
@@ -120,6 +125,9 @@ function CanvasFlowPageInner() {
   // ── Workflow persistence state ─────────────────────────────────────────────
   const [workflows, setWorkflows] = useState<WorkflowMeta[]>([])
   const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null)
+  const activeWf = workflows.find((w) => w.id === activeWorkflowId)
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "dirty" | "error">("saved")
+  const [isManualSaving, setIsManualSaving] = useState(false)
   const [workflowSearch, setWorkflowSearch] = useState("")
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
@@ -243,6 +251,8 @@ function CanvasFlowPageInner() {
     nodes,
     edges,
     startNodePos,
+    name: activeWf?.name,
+    onSaveStatusChange: setSaveStatus,
     onLoad: (row: WorkflowRow) => {
       setNodes((row.nodes as FlowNode[]) ?? [])
       setEdges((row.edges as Edge[]) ?? [])
@@ -252,8 +262,44 @@ function CanvasFlowPageInner() {
     },
   })
 
+  // ── Manual Save Action ──────────────────────────────────────────────────────
+  const handleManualSave = useCallback(async () => {
+    if (!activeWorkflowId) return
+    setIsManualSaving(true)
+    setSaveStatus("saving")
+    try {
+      const ok = await saveWorkflow(activeWorkflowId, nodes, edges, startNodePos, activeWf?.name)
+      if (ok) {
+        setSaveStatus("saved")
+        const wfs = await listWorkflows()
+        setWorkflows(wfs)
+      } else {
+        setSaveStatus("error")
+      }
+    } catch {
+      setSaveStatus("error")
+    } finally {
+      setIsManualSaving(false)
+    }
+  }, [activeWorkflowId, nodes, edges, startNodePos, activeWf?.name])
+
+  // Ctrl+S / Cmd+S shortcut to save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        handleManualSave()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [handleManualSave])
+
   // ── Workflow sidebar actions ────────────────────────────────────────────────
   const handleCreateWorkflow = useCallback(async () => {
+    if (activeWorkflowId) {
+      await saveWorkflow(activeWorkflowId, nodes, edges, startNodePos, activeWf?.name)
+    }
     const newId = await createWorkflow("Untitled workflow")
     const wfs = await listWorkflows()
     setWorkflows(wfs)
@@ -261,14 +307,32 @@ function CanvasFlowPageInner() {
     setEdges([])
     setStartNodePos({ x: 340, y: 280 })
     setActiveWorkflowId(newId)
-  }, [])
+  }, [activeWorkflowId, nodes, edges, startNodePos, activeWf?.name])
+
+  const handleDuplicateWorkflow = useCallback(
+    async (id: string) => {
+      if (id === activeWorkflowId) {
+        await saveWorkflow(activeWorkflowId, nodes, edges, startNodePos, activeWf?.name)
+      }
+      const newId = await duplicateWorkflow(id)
+      if (newId) {
+        const wfs = await listWorkflows()
+        setWorkflows(wfs)
+        setActiveWorkflowId(newId)
+      }
+    },
+    [activeWorkflowId, nodes, edges, startNodePos, activeWf?.name]
+  )
 
   const handleSwitchWorkflow = useCallback(
-    (id: string) => {
+    async (id: string) => {
       if (id === activeWorkflowId) return
+      if (activeWorkflowId) {
+        await saveWorkflow(activeWorkflowId, nodes, edges, startNodePos, activeWf?.name)
+      }
       setActiveWorkflowId(id)
     },
-    [activeWorkflowId]
+    [activeWorkflowId, nodes, edges, startNodePos, activeWf?.name]
   )
 
   const handleDeleteWorkflow = useCallback(
@@ -870,8 +934,6 @@ function CanvasFlowPageInner() {
 
   const cursorStyle = isPanningState ? "grabbing" : flowState === "dragging" ? "crosshair" : "grab"
 
-  // Active workflow metadata
-  const activeWf = workflows.find((w) => w.id === activeWorkflowId)
 
   return (
     <div className="relative flex h-full w-full overflow-hidden bg-[#0c0e14] text-slate-100 select-none">
@@ -971,6 +1033,16 @@ function CanvasFlowPageInner() {
                       isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                     }`}
                   >
+                    <button
+                      title="Duplicate workflow"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDuplicateWorkflow(wf.id)
+                      }}
+                      className="flex h-5 w-5 items-center justify-center rounded text-white/40 hover:bg-white/10 hover:text-white transition"
+                    >
+                      <Copy className="h-2.5 w-2.5" />
+                    </button>
                     {renamingId === wf.id ? (
                       <button
                         title="Confirm rename"
@@ -982,16 +1054,24 @@ function CanvasFlowPageInner() {
                     ) : (
                       <button
                         title="Rename"
-                        onClick={() => handleStartRename(wf.id, wf.name)}
-                        className="flex h-5 w-5 items-center justify-center rounded text-white/40 hover:bg-white/10 hover:text-white"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleStartRename(wf.id, wf.name)
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded text-white/40 hover:bg-white/10 hover:text-white transition"
                       >
                         <Pencil className="h-2.5 w-2.5" />
                       </button>
                     )}
                     <button
                       title="Delete workflow"
-                      onClick={() => handleDeleteWorkflow(wf.id)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-white/40 hover:bg-red-500/20 hover:text-red-400"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm(`Are you sure you want to delete "${wf.name}"?`)) {
+                          handleDeleteWorkflow(wf.id)
+                        }
+                      }}
+                      className="flex h-5 w-5 items-center justify-center rounded text-white/40 hover:bg-red-500/20 hover:text-red-400 transition"
                     >
                       <Trash2 className="h-2.5 w-2.5" />
                     </button>
@@ -1000,8 +1080,16 @@ function CanvasFlowPageInner() {
               )
             })}
           {workflows.length === 0 && (
-            <div className="px-3 py-8 text-center text-xs text-white/30 italic">
-              No workflows yet. Click + to create one.
+            <div className="flex flex-col items-center justify-center px-3 py-8 text-center">
+              <Workflow className="h-8 w-8 text-white/10 mb-2" />
+              <p className="text-xs text-white/40 mb-3">No workflows yet.</p>
+              <button
+                onClick={handleCreateWorkflow}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 px-3 py-1.5 text-xs font-medium transition active:scale-95"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Create Workflow</span>
+              </button>
             </div>
           )}
         </nav>
@@ -1486,9 +1574,27 @@ function CanvasFlowPageInner() {
             </button>
 
             <div className="flex items-center gap-2.5 rounded-xl bg-[#0f121a]/90 backdrop-blur-xl border border-white/10 px-3 py-1.5 shadow-xl">
-              <span className="text-xs font-bold text-white/90">
-                {activeWf?.name || "Untitled workflow"}
-              </span>
+              <input
+                type="text"
+                value={activeWf?.name || "Untitled workflow"}
+                onChange={(e) => {
+                  const newName = e.target.value
+                  if (!activeWorkflowId) return
+                  setWorkflows((prev) =>
+                    prev.map((w) => (w.id === activeWorkflowId ? { ...w, name: newName } : w))
+                  )
+                }}
+                onBlur={async (e) => {
+                  if (!activeWorkflowId) return
+                  const finalName = e.target.value.trim() || "Untitled workflow"
+                  await renameWorkflow(activeWorkflowId, finalName)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                }}
+                className="bg-transparent text-xs font-bold text-white/90 outline-none hover:bg-white/5 focus:bg-white/10 focus:ring-1 focus:ring-blue-500/50 rounded px-1.5 py-0.5 transition w-36 sm:w-48 truncate cursor-text"
+                title="Click to rename workflow"
+              />
 
               {/* Status Pill */}
               <div className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 px-2 py-0.5">
@@ -1502,15 +1608,34 @@ function CanvasFlowPageInner() {
                 </span>
               </div>
 
-              {/* Saved Indicator */}
-              <div className="hidden sm:flex items-center gap-1 text-[10px] text-white/40 border-l border-white/10 pl-2">
-                <Check className="h-3 w-3 text-emerald-400" />
-                <span>Saved</span>
+              {/* Dynamic Save Status Indicator */}
+              <div className="hidden sm:flex items-center gap-1.5 text-[10px] border-l border-white/10 pl-2.5">
+                {isManualSaving || saveStatus === "saving" ? (
+                  <>
+                    <Loader2 className="h-3 w-3 text-blue-400 animate-spin" />
+                    <span className="text-blue-300">Saving...</span>
+                  </>
+                ) : saveStatus === "dirty" ? (
+                  <>
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="text-amber-300">Unsaved</span>
+                  </>
+                ) : saveStatus === "error" ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3 text-rose-400" />
+                    <span className="text-rose-300">Save failed</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-3 w-3 text-emerald-400" />
+                    <span className="text-emerald-400">Saved</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Right: Quick Tools, Design, Run & Publish */}
+          {/* Right: Quick Tools, Design, Save, Run & Publish */}
           <div className="flex items-center gap-2 pointer-events-auto">
             {/* Widget Script Button */}
             <button
@@ -1532,6 +1657,27 @@ function CanvasFlowPageInner() {
             >
               <Sparkles className="h-3.5 w-3.5 text-purple-400" />
               <span>Design Chat</span>
+            </button>
+
+            {/* Save Workflow Button */}
+            <button
+              onClick={handleManualSave}
+              disabled={isManualSaving}
+              title="Save Workflow (Ctrl+S)"
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold shadow-xl transition active:scale-95 border ${
+                saveStatus === "saved" && !isManualSaving
+                  ? "bg-[#0f121a]/90 backdrop-blur-xl border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/20"
+                  : "bg-blue-600/20 hover:bg-blue-600/30 border-blue-500/30 text-blue-300 hover:text-white"
+              }`}
+            >
+              {isManualSaving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+              ) : saveStatus === "saved" ? (
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+              ) : (
+                <Save className="h-3.5 w-3.5 text-blue-400" />
+              )}
+              <span>{isManualSaving ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save"}</span>
             </button>
 
             {/* Run Button */}
