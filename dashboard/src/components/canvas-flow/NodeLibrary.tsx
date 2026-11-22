@@ -5,18 +5,7 @@ import {
   BookOpen,
   Users,
   Bot,
-  Link2,
-  FunctionSquare,
-  Puzzle,
-  Server,
-  Settings2,
-  GitBranch,
-  Sliders,
-  Code2,
-  Workflow,
-  Square,
   MessageSquare,
-  Camera,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -82,80 +71,12 @@ const sections: LibrarySection[] = [
   {
     title: "Tools & APIs",
     accentColor: "text-sky-400 bg-sky-500/10 border-sky-500/20",
-    items: [
-      {
-        icon: <Link2 className="h-3.5 w-3.5 text-sky-400" />,
-        label: "API",
-        color: "group-hover:text-sky-300",
-        description: "Call external REST endpoint",
-      },
-      {
-        icon: <FunctionSquare className="h-3.5 w-3.5 text-cyan-400" />,
-        label: "Function",
-        color: "group-hover:text-cyan-300",
-        description: "Execute custom serverless task",
-      },
-      {
-        icon: <Puzzle className="h-3.5 w-3.5 text-blue-400" />,
-        label: "Integration",
-        color: "group-hover:text-blue-300",
-        description: "Connect 3rd party service",
-      },
-      {
-        icon: <Server className="h-3.5 w-3.5 text-teal-400" />,
-        label: "MCP",
-        color: "group-hover:text-teal-300",
-        description: "Model Context Protocol server",
-      },
-    ],
+    items: [],
   },
   {
     title: "Logic & Flow",
     accentColor: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    items: [
-      {
-        icon: <Settings2 className="h-3.5 w-3.5 text-amber-400" />,
-        label: "Set",
-        color: "group-hover:text-amber-300",
-        description: "Store variable in session",
-      },
-      {
-        icon: <GitBranch className="h-3.5 w-3.5 text-orange-400" />,
-        label: "Condition",
-        color: "group-hover:text-orange-300",
-        description: "If / Else branching logic",
-      },
-      {
-        icon: <Sliders className="h-3.5 w-3.5 text-yellow-400" />,
-        label: "Operator",
-        color: "group-hover:text-yellow-300",
-        description: "Mathematical & string operation",
-      },
-      {
-        icon: <Code2 className="h-3.5 w-3.5 text-emerald-400" />,
-        label: "Code",
-        color: "group-hover:text-emerald-300",
-        description: "Inline JavaScript execution",
-      },
-      {
-        icon: <Workflow className="h-3.5 w-3.5 text-rose-400" />,
-        label: "Workflow",
-        color: "group-hover:text-rose-300",
-        description: "Sub-workflow trigger",
-      },
-      {
-        icon: <Camera className="h-3.5 w-3.5 text-purple-400" />,
-        label: "Capture",
-        color: "group-hover:text-purple-300",
-        description: "Capture user response to context",
-      },
-      {
-        icon: <Square className="h-3.5 w-3.5 text-red-400" />,
-        label: "End",
-        color: "group-hover:text-red-300",
-        description: "Terminate current dialogue",
-      },
-    ],
+    items: [],
   },
 ]
 
@@ -175,7 +96,7 @@ export default function NodeLibrary() {
         item.label.toLowerCase().includes(search.toLowerCase())
       ),
     }))
-    .filter((sec) => sec.items.length > 0)
+    .filter((sec) => (!search ? true : sec.items.length > 0))
 
   return (
     <div
